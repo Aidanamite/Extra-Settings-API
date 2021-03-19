@@ -1,0 +1,132 @@
+{
+  "name": "Settings Template",
+  "author": "Aidanamite",
+  "description": "Just a template/demonstration of how to use the Extra Settings API mod",
+  "version": "1.1.8",
+  "license": "GNU AGPLv3",
+  "icon": "icon.png",
+  "banner": "banner.jpg",
+  "gameVersion": "1.0",
+  "requiredByAllPlayers": false,
+  "updateUrl": "https://www.raftmodding.com/api/v1/mods/settings-template/version.txt",
+  "isModPermanent": false,
+  "excludedFiles": [],
+  "modSettings": [
+    {
+      "name": "Checkbox Display: On By Default",
+      "type": "checkbox",
+      "default": true
+    },
+    {
+      "name": "Checkbox Display: Off By Default",
+      "type": "checkbox",
+      "default": false
+    },
+    {
+      "name": "Combobox Display: Default Is Valid",
+      "type": "combobox",
+      "default": "Second Item",
+      "values": [ "First Item", "Second Item", "Another Item" ]
+    },
+    {
+      "name": "Combobox Display: Default Is Not Valid",
+      "type": "combobox",
+      "default": "Yes",
+      "values": [ "Hello", "World" ]
+    },
+    {
+      "name": "Slider Display: No Range Set",
+      "type": "slider",
+      "default": 20
+    },
+    {
+      "name": "Slider Display: Only Type Set",
+      "type": "slider",
+      "default": 0.9,
+      "range": {
+        "type": "percent"
+      }
+    },
+    {
+      "name": "Slider Display: Min & Max Set",
+      "type": "slider",
+      "default": 75,
+      "range": {
+        "min": 40,
+        "max": 90
+      }
+    },
+    {
+      "name": "Slider Display: Decimal Count Set",
+      "type": "slider",
+      "default": 20,
+      "range": {
+        "decimals": 1
+      }
+    },
+    {
+      "name": "Slider Display: All Settings Changed",
+      "type": "slider",
+      "default": 21,
+      "range": {
+        "type": "number",
+        "min": 20,
+        "max": 25,
+        "decimals": 2
+      }
+    },
+    {
+      "name": "Slider Display: All Settings Changed 2",
+      "type": "slider",
+      "default": 0.75,
+      "range": {
+        "type": "percent",
+        "min": 0.5,
+        "max": 1.75,
+        "decimals": 1
+      }
+    },
+    {
+      "name": "Keybind Display: Both keys set",
+      "type": "keybind",
+      "mainDefault": "M", //default values for the keybinds must be specified as the name of its KeyCode enumarable. Refer to https://docs.unity3d.com/ScriptReference/KeyCode.html
+      "altDefault": "n"
+    },
+    {
+      "name": "Keybind Display: Only main set",
+      "type": "keybind",
+      "mainDefault": "g"
+    },
+    {
+      "name": "Keybind Display: Only alt set",
+      "type": "keybind",
+      "altDefault": "H"
+    },
+    {
+      "name": "Text Display",
+      "type": "text"
+    },
+    {
+      "name": "Button Display",
+      "type": "button"
+    },
+    {
+      "name": "Checkbox Display: Only changable in world. Saves to world",
+      "type": "checkbox",
+      "default": true,
+      "access": "world"
+    },
+    {
+      "name": "Checkbox Display: Only changable out of world",
+      "type": "checkbox",
+      "default": true,
+      "access": "mainmenu"
+    },
+    {
+      "name": "Checkbox Display: Only changable in world. Saves globally",
+      "type": "checkbox",
+      "default": true,
+      "access": "globalworld"
+    }
+  ]
+}
