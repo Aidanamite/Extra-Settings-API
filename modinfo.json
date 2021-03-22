@@ -2,7 +2,7 @@
   "name": "Settings Template",
   "author": "Aidanamite",
   "description": "Just a template/demonstration of how to use the Extra Settings API mod",
-  "version": "1.1.8",
+  "version": "1.2.0",
   "license": "GNU AGPLv3",
   "icon": "icon.png",
   "banner": "banner.jpg",
@@ -13,120 +13,55 @@
   "excludedFiles": [],
   "modSettings": [
     {
-      "name": "Checkbox Display: On By Default",
-      "type": "checkbox",
-      "default": true
+      "type": "checkbox", // required field
+      "name": "checkBoxDisplay", // required field. This is used as an ID. Having duplicate IDs may cause issues
+      "text": "Checkbox Display", // optional field. This is the text shown on the setting label. If not used, label will default to "name" field
+      "access": "both", // optional field. This can be set to "both", "mainmenu", "world" or "globalworld". See bottom of JSON for full explanation
+      "default": true // required field
     },
     {
-      "name": "Checkbox Display: Off By Default",
-      "type": "checkbox",
-      "default": false
+      "type": "combobox", // required field
+      "name": "comboBoxDisplay", // required field. This is used as an ID. Having duplicate IDs may cause issues
+      "text": "Combobox Display", // optional field. This is the text shown on the setting label. If not used, label will default to "name" field
+      "access": "world", // optional field. This can be set to "both", "mainmenu", "world" or "globalworld". See bottom of JSON for full explanation
+      "default": "World", // required field. If value specified is not found in the "values" field then will be defaulted to the first item in the list
+      "values": [ "Hello", "World", "I'm", "A", "Computer" ] // required field. This is the list of items that can be choosen in the combobox
     },
     {
-      "name": "Combobox Display: Default Is Valid",
-      "type": "combobox",
-      "default": "Second Item",
-      "values": [ "First Item", "Second Item", "Another Item" ]
-    },
-    {
-      "name": "Combobox Display: Default Is Not Valid",
-      "type": "combobox",
-      "default": "Yes",
-      "values": [ "Hello", "World" ]
-    },
-    {
-      "name": "Slider Display: No Range Set",
-      "type": "slider",
-      "default": 20
-    },
-    {
-      "name": "Slider Display: Only Type Set",
-      "type": "slider",
-      "default": 0.9,
-      "range": {
-        "type": "percent"
+      "type": "slider", // required field
+      "name": "sliderDisplay", // required field. This is used as an ID. Having duplicate IDs may cause issues
+      "text": "Slider Display", // optional field. This is the text shown on the setting label. If not used, label will default to "name" field
+      "access": "mainmenu", // optional field. This can be set to "both", "mainmenu", "world" or "globalworld". See bottom of JSON for full explanation
+      "default": 0.75, // required field. If value specified is outside the set range then will be defaulted to the nearest valid value
+      "range": { // optional field
+        "type": "percent", // optional field. Valid options are "percent" or "number". If not specified will default to "number"
+        "min": 0.5, // optional field
+        "max": 1.75, // optional field
+        "decimals": 1 // optional field. This is the numbers of decimals to round a number to for the display and the GetSilderValue method
       }
     },
     {
-      "name": "Slider Display: Min & Max Set",
-      "type": "slider",
-      "default": 75,
-      "range": {
-        "min": 40,
-        "max": 90
-      }
+      "type": "keybind", // required field
+      "name": "keybindDisplay", // required field. This is used as an ID. Having duplicate IDs may cause issues
+      "text": "Keybind Display", // optional field. This is the text shown on the setting label. If not used, label will default to "name" field
+      "access": "globalworld", // optional field. This can be set to "both", "mainmenu", "world" or "globalworld". See bottom of JSON for full explanation
+      "mainDefault": "M", // optional field. If not specified will default to "None"
+      "altDefault": "n" // optional field. If not specified will default to "None"
+      // Values for the keybinds must be specified as the name of its KeyCode enumarable. Refer to https://docs.unity3d.com/ScriptReference/KeyCode.html
     },
     {
-      "name": "Slider Display: Decimal Count Set",
-      "type": "slider",
-      "default": 20,
-      "range": {
-        "decimals": 1
-      }
+      "type": "text", // required field
+      "name": "textDisplay", // required field. This is used as an ID. Having duplicate IDs may cause issues
+      "text": "Text Display" // optional field. This is the text shown on the setting label. If not used, label will default to "name" field
     },
     {
-      "name": "Slider Display: All Settings Changed",
-      "type": "slider",
-      "default": 21,
-      "range": {
-        "type": "number",
-        "min": 20,
-        "max": 25,
-        "decimals": 2
-      }
-    },
-    {
-      "name": "Slider Display: All Settings Changed 2",
-      "type": "slider",
-      "default": 0.75,
-      "range": {
-        "type": "percent",
-        "min": 0.5,
-        "max": 1.75,
-        "decimals": 1
-      }
-    },
-    {
-      "name": "Keybind Display: Both keys set",
-      "type": "keybind",
-      "mainDefault": "M", //default values for the keybinds must be specified as the name of its KeyCode enumarable. Refer to https://docs.unity3d.com/ScriptReference/KeyCode.html
-      "altDefault": "n"
-    },
-    {
-      "name": "Keybind Display: Only main set",
-      "type": "keybind",
-      "mainDefault": "g"
-    },
-    {
-      "name": "Keybind Display: Only alt set",
-      "type": "keybind",
-      "altDefault": "H"
-    },
-    {
-      "name": "Text Display",
-      "type": "text"
-    },
-    {
-      "name": "Button Display",
-      "type": "button"
-    },
-    {
-      "name": "Checkbox Display: Only changable in world. Saves to world",
-      "type": "checkbox",
-      "default": true,
-      "access": "world"
-    },
-    {
-      "name": "Checkbox Display: Only changable out of world",
-      "type": "checkbox",
-      "default": true,
-      "access": "mainmenu"
-    },
-    {
-      "name": "Checkbox Display: Only changable in world. Saves globally",
-      "type": "checkbox",
-      "default": true,
-      "access": "globalworld"
+      "type": "button", // required field
+      "name": "buttonDisplay", // required field. This is used as an ID. Having duplicate IDs may cause issues
+      "text": "Button Display" // optional field. This is the text shown on the setting label. If not used, label will default to "name" field
     }
   ]
 }
+// If "access" is set to "both" then the value is saved globally and is visible at all times
+// If "access" is set to "mainmenu" then the value is saved globally and is only visible when not in world
+// If "access" is set to "world" then the value is saved to specific world's data and is only only visible when in a world
+// If "access" is set to "globalworld" then the value is saved globally and is only visible when in a world
