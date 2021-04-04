@@ -21,7 +21,7 @@ public class SettingsTemplate : Mod
 
     public void ExtraSettingsAPI_Load() // Occurs when the API loads the mod's settings
     {
-        myNewKey = ExtraSettingsAPI_GetKeybindName("Keybind Display: Both keys set");
+        myNewKey = ExtraSettingsAPI_GetKeybindName("keybindDisplay");
     }
 
     public void ExtraSettingsAPI_Unload() // Occurs when the API unloads
