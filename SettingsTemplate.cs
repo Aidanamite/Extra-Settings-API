@@ -153,6 +153,23 @@ public class SettingsTemplate : Mod
         return KeyCode.None;
     }
 
+    // Use to get the value of an item inside a Data type setting
+    // If no item with the specified subname exists it will return an empty string
+    public string ExtraSettingsAPI_GetDataValue(string SettingName, string subname)
+    {
+        if (ExtraSettingsAPI_Loaded)
+            return ExtraSettingsAPI_Traverse.Method("getDataValue", new object[] { this, SettingName, subname }).GetValue<string>();
+        return "";
+    }
+
+    // Use to get the subnames of all the items inside a Data type setting
+    public string[] ExtraSettingsAPI_GetDataNames(string SettingName)
+    {
+        if (ExtraSettingsAPI_Loaded)
+            return ExtraSettingsAPI_Traverse.Method("getDataNames", new object[] { this, SettingName }).GetValue<string[]>();
+        return new string[0];
+    }
+
     // Use to get the text label of a setting
     public string ExtraSettingsAPI_GetSettingText(string SettingName)
     {
@@ -222,6 +239,14 @@ public class SettingsTemplate : Mod
     {
         if (ExtraSettingsAPI_Loaded)
             ExtraSettingsAPI_Traverse.Method("setKeybind_alt", new object[] { this, SettingName, value }).GetValue();
+    }
+
+    // Use to set the value of an item inside a Data type setting
+    // If no item with the specified subname exists, a new item will be created with the specified value
+    public void ExtraSettingsAPI_SetDataValue(string SettingName, string subname, string value)
+    {
+        if (ExtraSettingsAPI_Loaded)
+            ExtraSettingsAPI_Traverse.Method("setDataValue", new object[] { this, SettingName, subname, value }).GetValue();
     }
 
     // Use to set the text label of a setting

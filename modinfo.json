@@ -2,7 +2,7 @@
   "name": "Settings Template",
   "author": "Aidanamite",
   "description": "Just a template/demonstration of how to use the Extra Settings API mod",
-  "version": "1.2.1",
+  "version": "1.2.5",
   "license": "GNU AGPLv3",
   "icon": "icon.png",
   "banner": "banner.jpg",
@@ -58,6 +58,14 @@
       "type": "button", // required field
       "name": "buttonDisplay", // required field. This is used as an ID. Having duplicate IDs may cause issues
       "text": "Button Display" // optional field. This is the text shown on the setting label. If not used, label will default to "name" field
+    },
+    {
+      "type": "data", // required field. This setting type will not show up in the settings menu at any time, it is purely for storing data to make use of the API's saving systems
+      "name": "dataStore", // required field. This is used as an ID. Having duplicate IDs may cause issues
+      "access": "both", // optional field. This can be set to "both", "mainmenu", "world" or "globalworld". See bottom of JSON for full explanation
+      "default": { // optional field. If not specified will default to an empty collection. Can contain as many items as you want under any names with any text values.
+        "anItem": "Anything you want"
+      }
     }
   ]
 }
