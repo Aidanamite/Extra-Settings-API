@@ -153,6 +153,14 @@ public class SettingsTemplate : Mod
         return KeyCode.None;
     }
 
+    // Use to get the input value from a Input type setting
+    public string ExtraSettingsAPI_GetInputValue(string SettingName)
+    {
+        if (ExtraSettingsAPI_Loaded)
+            return ExtraSettingsAPI_Traverse.Method("getInputValue", new object[] { this, SettingName }).GetValue<string>();
+        return "";
+    }
+
     // Use to get the value of an item inside a Data type setting
     // If no item with the specified subname exists it will return an empty string
     public string ExtraSettingsAPI_GetDataValue(string SettingName, string subname)
@@ -239,6 +247,13 @@ public class SettingsTemplate : Mod
     {
         if (ExtraSettingsAPI_Loaded)
             ExtraSettingsAPI_Traverse.Method("setKeybind_alt", new object[] { this, SettingName, value }).GetValue();
+    }
+
+    // Use to set the value of a Input type setting
+    public void ExtraSettingsAPI_SetInputValue(string SettingName, string value)
+    {
+        if (ExtraSettingsAPI_Loaded)
+            ExtraSettingsAPI_Traverse.Method("setInputValue", new object[] { this, SettingName, value }).GetValue();
     }
 
     // Use to set the value of an item inside a Data type setting

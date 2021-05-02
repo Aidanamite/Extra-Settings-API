@@ -2,7 +2,7 @@
   "name": "Settings Template",
   "author": "Aidanamite",
   "description": "Just a template/demonstration of how to use the Extra Settings API mod",
-  "version": "1.2.5",
+  "version": "1.3.0",
   "license": "GNU AGPLv3",
   "icon": "icon.png",
   "banner": "banner.jpg",
@@ -58,6 +58,13 @@
       "type": "button", // required field
       "name": "buttonDisplay", // required field. This is used as an ID. Having duplicate IDs may cause issues
       "text": "Button Display" // optional field. This is the text shown on the setting label. If not used, label will default to "name" field
+    },
+    {
+      "type": "input", // required field
+      "name": "inputDisplay", // required field. This is used as an ID. Having duplicate IDs may cause issues
+      "text": "Input Display", // optional field. This is the text shown on the setting label. If not used, label will default to "name" field
+      "default": "some Text", // optional field. If not specified will default to "" (empty)
+      "max": 20 // optional field. This is the max length that can be put into the input. To not limit input length, do not specify this field or set to less than 1.
     },
     {
       "type": "data", // required field. This setting type will not show up in the settings menu at any time, it is purely for storing data to make use of the API's saving systems
