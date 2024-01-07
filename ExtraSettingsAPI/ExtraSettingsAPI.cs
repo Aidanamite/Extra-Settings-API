@@ -9,6 +9,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Globalization;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Linq;
 using Object = UnityEngine.Object;
 using Debug = UnityEngine.Debug;
@@ -48,10 +49,11 @@ public class ExtraSettingsAPI : Mod
     static RectTransform closeTransform = OptionMenuContainer.transform.FindChildRecursively("CloseButton").transform as RectTransform;
     static RectTransform tabsTransform = OptionMenuContainer.transform.FindChildRecursively("TabContainer").transform as RectTransform;
     public static Sprite dividerSprite = divTransform.GetComponent<Image>().sprite;
-    public static Dictionary<Mod, modSettingContainer> modSettings;
+    public static Dictionary<Mod, ModSettingContainer> modSettings;
     public static Dictionary<Mod, EventCaller> mods;
     public static bool init;
-    Harmony harmony;
+    public Harmony harmony;
+    public static RectTransform prefabParent;
     public static GameObject sliderPrefab;
     public static GameObject checkboxPrefab;
     public static GameObject comboboxPrefab;
@@ -59,13 +61,20 @@ public class ExtraSettingsAPI : Mod
     public static GameObject buttonPrefab;
     public static GameObject textPrefab;
     public static GameObject titlePrefab;
+    public static GameObject sectionPrefab;
     public static GameObject inputPrefab;
+    public static GameObject multibuttonPrefab;
+    public static Button multibuttonChildPrefab;
     public static ColorBlock keybindColors;
     public static List<ModData> waitingToLoad;
     public static Traverse self;
-    public void Start()
+    public void Awake()
     {
         init = true;
+        prefabParent = new GameObject("PrefabParent").AddComponent<RectTransform>();
+        prefabParent.gameObject.SetActive(false);
+        DontDestroyOnLoad(prefabParent.gameObject);
+
         sliderPrefab = null;
         checkboxPrefab = null;
         comboboxPrefab = null;
@@ -73,8 +82,9 @@ public class ExtraSettingsAPI : Mod
         buttonPrefab = null;
         textPrefab = null;
         titlePrefab = null;
+        sectionPrefab = null;
         inputPrefab = null;
-        modSettings = new Dictionary<Mod, modSettingContainer>();
+        modSettings = new Dictionary<Mod, ModSettingContainer>();
         mods = new Dictionary<Mod, EventCaller>();
         waitingToLoad = new List<ModData>();
         modInfo = modlistEntry.jsonmodinfo;
@@ -83,18 +93,17 @@ public class ExtraSettingsAPI : Mod
         if (settingsController.IsOpen)
             insertNewSettingsMenu();
         Config = getSaveJson();
-        if (RAPI.GetLocalPlayer() != null)
+        if (RAPI.GetLocalPlayer())
             loadLocal(true);
         self = Traverse.Create(this);
-        loadAllSettings();
+        //loadAllSettings();
         keybindColors = new ColorBlock();
         keybindColors.disabledColor = new Color(0.772f, 0.233f, 0.170f, 0.502f);
         keybindColors.highlightedColor = new Color(0.956f, 0.893f, 0.759f, 1.000f);
         keybindColors.normalColor = new Color(0.733f, 0.631f, 0.416f, 1.000f);
         keybindColors.pressedColor = new Color(0.733f, 0.631f, 0.416f, 1.000f);
         keybindColors.selectedColor = new Color(0.956f, 0.893f, 0.759f, 1.000f);
-        harmony = new Harmony("com.aidanamite.ExtraSettingsAPI");
-        harmony.PatchAll();
+        (harmony = new Harmony("com.aidanamite.ExtraSettingsAPI")).PatchAll();
         Log("Mod has been loaded!");
     }
 
@@ -102,23 +111,46 @@ public class ExtraSettingsAPI : Mod
     {
         if (waitingToLoad.Count > 0)
             for (int i = waitingToLoad.Count - 1; i >= 0; i--)
-                if (waitingToLoad[i].modinfo.modState == ModInfo.ModStateEnum.running && waitingToLoad[i].modinfo.mainClass != null)
-                    tryLoadSettings(waitingToLoad[i]);
+                if (waitingToLoad[i].modinfo?.mainClass && mods.ContainsKey(waitingToLoad[i].modinfo.mainClass))
+                    waitingToLoad.RemoveAt(i);
+                else if (waitingToLoad[i].modinfo.modState == ModInfo.ModStateEnum.running && waitingToLoad[i].modinfo.mainClass)
+                {
+                    var m = waitingToLoad[i];
+                    waitingToLoad.RemoveAt(i);
+                    waitingToLoad[i].modinfo.mainClass.gameObject.AddComponent<WaitForFirstUpdate>().onFirstUpdate = delegate
+                    {
+                        TryLoadSettings(m);
+                    };
+                }
                 else if (waitingToLoad[i].modinfo.modState == ModInfo.ModStateEnum.errored)
                     waitingToLoad.RemoveAt(i);
+        if (Patch_EnterExitKeybind.lastEntered.Item1 && Input.GetKeyDown(KeyCode.Mouse1)) {
+            if (Patch_EnterExitKeybind.lastEntered.Item2)
+                Patch_EnterExitKeybind.lastEntered.Item1.Keybind.MainKey = KeyCode.None;
+            else
+                    Patch_EnterExitKeybind.lastEntered.Item1.Keybind.AltKey = KeyCode.None;
+            Patch_EnterExitKeybind.lastEntered.Item1.Set(Patch_EnterExitKeybind.lastEntered.Item1.Keybind);
+        }
     }
 
     public void OnModUnload()
     {
-        harmony.UnpatchAll(harmony.Id);
+        harmony?.UnpatchAll(harmony.Id);
         if (!init)
             removeNewSettingsMenu();
+        if (prefabParent)
+            Destroy(prefabParent.gameObject);
         Log("Mod has been unloaded!");
     }
 
     public static void Log(object message)
     {
         Debug.Log("[" + modInfo.name + "]: " + message.ToString());
+    }
+
+    public static void LogWarning(object message)
+    {
+        Debug.LogWarning("[" + modInfo.name + "]: " + message.ToString());
     }
 
     public static void LogTree(Transform transform)
@@ -136,14 +168,14 @@ public class ExtraSettingsAPI : Mod
         return str;
     }
 
-    public static void ErrorLog(object message)
+    public static void LogError(object message)
     {
         Debug.LogError("[" + modInfo.name + "]: " + message.ToString());
     }
 
     public static void ErrorLog(Exception err)
     {
-        ErrorLog(err.GetType() + "\n" + err.Message + "\n" + err.StackTrace);
+        LogError(err);
     }
 
     public static JSONObject getSaveJson(bool isLocal = false)
@@ -174,7 +206,7 @@ public class ExtraSettingsAPI : Mod
         }
         catch (Exception err)
         {
-            ErrorLog("An error occured while trying to save settings: " + err.Message);
+            LogError("An error occured while trying to save settings: " + err.Message);
         }
     }
 
@@ -188,12 +220,14 @@ public class ExtraSettingsAPI : Mod
         if (data.IsNull || !data.HasField("savedSettings"))
             data.AddField("savedSettings", new JSONObject());
         JSONObject store = data.GetField("savedSettings");
-        foreach (modSettingContainer container in modSettings.Values)
-            store.TrySetField(container.IDName, container.generateSaveJson(path != ""));
+        foreach (ModSettingContainer container in modSettings.Values)
+            store.TrySetField(container.IDName, container.GenerateSaveJson(path != ""));
 
         saveJson(data, path);
         CultureInfo.CurrentCulture = current;
     }
+
+    public static void saveSettings() => generateSaveJson();
 
     public static void loadLocal(bool loadSave)
     {
@@ -201,8 +235,8 @@ public class ExtraSettingsAPI : Mod
             LocalConfig = getSaveJson(true);
         else
             LocalConfig = new JSONObject();
-        foreach (modSettingContainer container in modSettings.Values)
-            container.loadLocal();
+        foreach (ModSettingContainer container in modSettings.Values)
+            container.LoadLocal();
     }
 
     public static void insertNewSettingsMenu()
@@ -215,90 +249,96 @@ public class ExtraSettingsAPI : Mod
         contentTransform = OptionMenuContainer.transform.FindChildRecursively("TabContent").transform as RectTransform;
         closeTransform = OptionMenuContainer.transform.FindChildRecursively("CloseButton").transform as RectTransform;
         tabsTransform = OptionMenuContainer.transform.FindChildRecursively("TabContainer").transform as RectTransform;
-        Vector2 newSize = backTransform.anchorMax + new Vector2(0.13f, 0f);
+        Vector2 newSize = new Vector2(tabsTransform.rect.width * tabButtons.Value.Length.StepUp(), 0);
+        backTransform.offsetMax += newSize;
+        divTransform.offsetMax += newSize;
+        contentTransform.offsetMax += newSize;
+        closeTransform.offsetMin += newSize;
+        closeTransform.offsetMax += newSize;
+        tabsTransform.offsetMax += newSize;
         int newIndex = tabButtons.Value.Length;
         GameObject settingsSet = OptionMenuContainer.transform.FindChildRecursively(sourceName).gameObject;
-        newSet = Instantiate(settingsSet);
+        newSet = Instantiate(settingsSet, settingsSet.transform.parent, false);
         GameObject settingsTab = OptionMenuContainer.transform.FindChildRecursively(sourceName + "Tab").gameObject;
-        newTab = Instantiate(settingsTab);
+        newTab = Instantiate(settingsTab, settingsTab.transform.parent, false);
         newSet.name = newName;
         newTab.name = newName + "Tab";
-        newTab.transform.SetParent(settingsTab.transform.parent, false);
-        newSet.transform.SetParent(settingsSet.transform.parent, false);
         newSet.SetActive(false);
+        newTabBut = newTab.GetComponent<TabButton>();
+        DestroyLocalizations(newTabBut.gameObject);
+        Text newTabTex = newTabBut.GetComponentInChildren<Text>(true);
+        newTabBut.tabIndex = newIndex;
+        newTabTex.text = newName;
+        newTabBut.name = newTab.name;
+        newTabBut.OnPointerExit(true);
+        Traverse tabTraverse = Traverse.Create(newTabBut);
+        tabTraverse.Field("tabButton").SetValue(newTabBut.GetComponentInChildren<Button>(true));
+        tabTraverse.Field("tab").SetValue(newSet);
+        var buttons = tabButtons.Value;
+        Add(ref buttons, newTabBut);
+        tabButtons.Value = buttons;
         (newTab.transform as RectTransform).pivot = new Vector2(0f, 1f);
-        Transform setBox = newSet.transform.FindChildRecursively(sourceName + "SettingsBox");
-        if (setBox != null)
-        {
-            setBox.SetParent(null);
-            Destroy(setBox.gameObject);
-        }
-        ScrollRect scrollRect = newSet.GetComponentInChildren<ScrollRect>();
-        Scrollbar scrollbar = newSet.GetComponentInChildren<Scrollbar>();
-        scrollRect.verticalScrollbar = scrollbar;
-        scrollbar.value = 1;
-        VerticalLayoutGroup verticalLayoutGroup = newSet.GetComponentInChildren<VerticalLayoutGroup>(); // This will fetch null if copied tab is "General"
-        ContentSizeFitter contentSizeFitter = verticalLayoutGroup.gameObject.AddComponent<ContentSizeFitter>();
-        contentSizeFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-        contentSizeFitter.verticalFit = ContentSizeFitter.FitMode.MinSize;
+        DestroyImmediate(newSet.GetComponent<GraphicsSettingsBox>());
         newOptCon = newSet.transform.FindChildRecursively("Content").gameObject;
         foreach (Transform transform in newOptCon.transform)
         {
-            if (comboboxPrefab == null && transform.gameObject.GetComponentInChildren<Dropdown>() != null)
+            if (!comboboxPrefab && transform.gameObject.GetComponentInChildren<Dropdown>(true))
             {
-                comboboxPrefab = Instantiate(transform.gameObject, null, false);
-                comboboxPrefab.name = "DropDownPrefab";
-                Dropdown drop = comboboxPrefab.GetComponentInChildren<Dropdown>();
+                comboboxPrefab = Instantiate(transform.gameObject, prefabParent, false);
+                comboboxPrefab.name = "Combobox Setting";
+                Dropdown drop = comboboxPrefab.GetComponentInChildren<Dropdown>(true);
                 drop.onValueChanged = new Dropdown.DropdownEvent();
-                foreach (LocalizeDropdownSemih localize in drop.gameObject.GetComponentsInChildren<LocalizeDropdownSemih>())
+                foreach (LocalizeDropdownSemih localize in drop.GetComponentsInChildren<LocalizeDropdownSemih>(true))
                 {
                     localize.enabled = false;
-                    DestroyImmediate(localize, true);
+                    DestroyImmediate(localize);
                 }
                 drop.ClearOptions();
                 drop.AddOptions(new List<Dropdown.OptionData> { new Dropdown.OptionData("test") });
                 drop.itemText.text = drop.options[0].text;
-                comboboxPrefab.GetComponentInChildren<Text>().text = "Option Name";
-                destroyLocalizations(comboboxPrefab);
+                comboboxPrefab.GetComponentInChildren<Text>(true).text = "Option Name";
+                DestroyLocalizations(comboboxPrefab);
+
+                inputPrefab = Instantiate(comboboxPrefab, prefabParent, false);
+                inputPrefab.name = "Input Setting";
+                GameObject inputF = inputPrefab.transform.Find("Dropdown").gameObject;
+                inputF.name = "InputField";
+                (inputF.transform as RectTransform).offsetMin *= new Vector2(1.5f, 1);
+                DestroyImmediate(inputF.GetComponent<Dropdown>());
+                InputField tmp = inputF.AddComponent<InputField>();
+                tmp.textComponent = inputF.transform.Find("Label").GetComponent<Text>();
+                tmp.textComponent.rectTransform.offsetMax = -tmp.textComponent.rectTransform.offsetMin;
+                Destroy(inputF.transform.Find("Arrow").gameObject);
+                Destroy(inputF.transform.Find("Template").gameObject);
             }
-            if (sliderPrefab == null && transform.gameObject.GetComponentInChildren<UISlider>() != null)
+            if (!sliderPrefab && transform.gameObject.GetComponentInChildren<UISlider>(true))
             {
-                sliderPrefab = Instantiate(transform.gameObject, null, false);
-                sliderPrefab.name = "SliderPrefab";
-                Slider slide = sliderPrefab.GetComponentInChildren<Slider>();
+                sliderPrefab = Instantiate(transform.gameObject, prefabParent, false);
+                sliderPrefab.name = "Slider Setting";
+                Slider slide = sliderPrefab.GetComponentInChildren<Slider>(true);
                 slide.onValueChanged = new Slider.SliderEvent();
                 slide.minValue = 0;
                 slide.maxValue = 1;
                 slide.wholeNumbers = false;
                 slide.value = 0.25f;
-                sliderPrefab.GetComponentInChildren<Text>().text = "Option Name";
-                destroyLocalizations(sliderPrefab);
+                sliderPrefab.GetComponentInChildren<Text>(true).text = "Option Name";
+                DestroyLocalizations(sliderPrefab);
             }
-            if (checkboxPrefab == null && transform.gameObject.GetComponentInChildren<Toggle>() != null)
+            if (!checkboxPrefab && transform.gameObject.GetComponentInChildren<Toggle>(true) && transform.gameObject.GetComponentInChildren<Dropdown>(true) == null)
             {
-                checkboxPrefab = Instantiate(transform.gameObject, null, false);
-                checkboxPrefab.name = "CheckboxPrefab";
-                Toggle checkbox = checkboxPrefab.GetComponentInChildren<Toggle>();
+                checkboxPrefab = Instantiate(transform.gameObject, prefabParent, false);
+                checkboxPrefab.name = "Checkbox Setting";
+                Toggle checkbox = checkboxPrefab.GetComponentInChildren<Toggle>(true);
                 checkbox.onValueChanged = new Toggle.ToggleEvent();
                 checkbox.isOn = false;
-                checkboxPrefab.GetComponentInChildren<Text>().text = "Option Name";
-            }
-            if (textPrefab == null && transform.gameObject.GetComponentInChildren<Toggle>() != null)
-            {
-                textPrefab = Instantiate(transform.gameObject, null, false);
-                textPrefab.name = "TextPrefab";
-                Toggle checkbox2 = textPrefab.GetComponentInChildren<Toggle>();
-                checkbox2.onValueChanged = new Toggle.ToggleEvent();
-                checkbox2.gameObject.SetActive(false);
-                textPrefab.GetComponentInChildren<Text>().text = "Some Text";
-            }
-            if (titlePrefab == null && transform.gameObject.GetComponentInChildren<Toggle>() != null)
-            {
-                titlePrefab = Instantiate(transform.gameObject, null, false);
-                titlePrefab.name = "TitlePrefab";
-                Toggle checkbox3 = titlePrefab.GetComponentInChildren<Toggle>();
-                DestroyImmediate(checkbox3.graphic.gameObject);
-                //DestroyImmediate(checkbox3.gameObject);
+                checkboxPrefab.GetComponentInChildren<Text>(true).text = "Option Name";
+                DestroyLocalizations(checkboxPrefab);
+
+                titlePrefab = Instantiate(transform.gameObject, prefabParent, false);
+                titlePrefab.name = "Title";
+                Toggle checkbox3 = titlePrefab.GetComponentInChildren<Toggle>(true);
+                Destroy(checkbox3.graphic.gameObject);
+                //Destroy(checkbox3.gameObject);
                 checkbox3.onValueChanged = new Toggle.ToggleEvent();
                 checkbox3.isOn = false;
                 var checkboxImage = checkbox3.gameObject.AddComponent<ToggleImage>();
@@ -310,64 +350,85 @@ public class ExtraSettingsAPI : Mod
                 tex.LoadImage(instance.GetEmbeddedFileBytes("left.png"));
                 tex.Apply();
                 checkboxImage.off = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
-                titlePrefab.GetComponentInChildren<Text>().text = "Mod Name";
-                titlePrefab.AddImageObject(newSize.x);
+                titlePrefab.GetComponentInChildren<Text>(true).text = "Mod Name";
+                DestroyLocalizations(titlePrefab);
+
+                sectionPrefab = Instantiate(titlePrefab, prefabParent, false);
+                sectionPrefab.name = "Section Setting";
+                titlePrefab.AddImageObject(10);
+                sectionPrefab.AddImageObject(5);
+
+                textPrefab = Instantiate(transform.gameObject, prefabParent, false);
+                textPrefab.name = "Text Setting";
+                Toggle checkbox2 = textPrefab.GetComponentInChildren<Toggle>(true);
+                checkbox2.onValueChanged = new Toggle.ToggleEvent();
+                checkbox2.gameObject.SetActive(false);
+                textPrefab.GetComponentInChildren<Text>(true).text = "Some Text";
+                DestroyLocalizations(textPrefab);
             }
             Destroy(transform.gameObject);
         }
         foreach (Transform transform in OptionMenuContainer.transform.FindChildRecursively("Controls").gameObject.transform.FindChildRecursively("Content").gameObject.transform)
         {
-            if (keybindPrefab == null && transform.GetComponentInChildren<KeybindInterface>() != null)
+            if (!keybindPrefab && transform.GetComponentInChildren<KeybindInterface>(true))
             {
                 GameObject copiedObj = transform.FindChildRecursively("Sprint").gameObject;
-                keybindPrefab = Instantiate(copiedObj, null, false);
-                keybindPrefab.name = "KeybindPrefab";
-                keybindPrefab.GetComponentInChildren<Text>().text = "Option Name";
-                destroyLocalizations(keybindPrefab);
+                keybindPrefab = Instantiate(copiedObj, prefabParent, false);
+                keybindPrefab.name = "Keybind Setting";
+                keybindPrefab.GetComponentInChildren<Text>(true).text = "Option Name";
+                DestroyLocalizations(keybindPrefab);
             }
-            if (buttonPrefab == null && transform.gameObject.GetComponentInChildren<Button>() != null)
+            if (!buttonPrefab && transform.gameObject.GetComponentInChildren<Button>(true))
             {
-                buttonPrefab = Instantiate(transform.gameObject, null, false);
-                buttonPrefab.name = "ButtonPrefab";
-                Button button = buttonPrefab.GetComponentInChildren<Button>();
+                buttonPrefab = Instantiate(transform.gameObject, prefabParent, false);
+                buttonPrefab.name = "Button Setting";
+                Button button = buttonPrefab.GetComponentInChildren<Button>(true);
                 button.onClick = new Button.ButtonClickedEvent();
-                button.GetComponentInChildren<Text>().text = "Button Name";
-                destroyLocalizations(buttonPrefab);
+                button.GetComponentInChildren<Text>(true).text = "Button Name";
+                DestroyLocalizations(buttonPrefab);
+
+                multibuttonPrefab = Instantiate(transform.gameObject, prefabParent, false);
+                multibuttonPrefab.name = "MultiButton Setting";
+                var b = multibuttonPrefab.GetComponentInChildren<Button>(true).GetComponent<RectTransform>();
+                var p = b.parent as RectTransform;
+                var s = (b.rect.height - p.rect.height) / 2;
+                Destroy(b.gameObject);
+                var layout = new GameObject("Layout");
+                layout.transform.SetParent(p, false);
+                var group = layout.AddComponent<HorizontalLayoutGroup>();
+                group.spacing = 2;
+                group.childAlignment = TextAnchor.MiddleLeft;
+                group.childScaleWidth =true;
+                group.childScaleHeight = true;
+                group.childControlWidth = false;
+                group.childControlHeight = false;
+                group.childForceExpandWidth = false;
+                group.childForceExpandHeight = false;
+                var fitter = layout.AddComponent<ContentSizeFitter>();
+                fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+                fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+                var r = layout.GetComponent<RectTransform>();
+                r.anchorMin = Vector2.zero;
+                r.anchorMax = new Vector2(0,1);
+                r.pivot = new Vector2(0, 0.5f);
+                r.offsetMin = Vector2.one * s;
+                r.offsetMax = Vector2.one * -s;
+                DestroyLocalizations(multibuttonPrefab);
+
+                multibuttonChildPrefab = Instantiate(button, prefabParent, false);
+                multibuttonChildPrefab.name = "MultiButton Setting Button";
+                DestroyImmediate( multibuttonChildPrefab.GetComponent<LayoutElement>());
             }
         }
-        inputPrefab = Instantiate(textPrefab, null, false);
-        inputPrefab.name = "InputPrefab";
-        GameObject inputF = Instantiate(comboboxPrefab.transform.Find("Dropdown").gameObject, inputPrefab.transform, false);
-        inputF.name = "InputField";
-        (inputF.transform as RectTransform).offsetMin *= new Vector2(1.5f, 1);
-        DestroyImmediate(inputF.GetComponent<Dropdown>(), true);
-        InputField tmp = inputF.AddComponent<InputField>();
-        tmp.textComponent = inputF.transform.Find("Label").GetComponent<Text>();
-        tmp.textComponent.rectTransform.offsetMax = -tmp.textComponent.rectTransform.offsetMin;
-        DestroyImmediate(inputF.transform.Find("Arrow").gameObject, true);
-        DestroyImmediate(inputF.transform.Find("Template").gameObject, true);
 
-        newTabBut = newTab.GetComponent<TabButton>();
-        destroyLocalizations(newTabBut.gameObject);
-        Text newTabTex = newTabBut.GetComponentInChildren<Text>();
-        newTabBut.tabIndex = newIndex;
-        newTabTex.text = newName;
-        newTabBut.name = newTab.name;
-        newTabBut.OnPointerExit(true);
-        Traverse tabTraverse = Traverse.Create(newTabBut);
-        tabTraverse.Field("tabButton").SetValue(newTabBut.GetComponentInChildren<Button>());
-        tabTraverse.Field("tab").SetValue(newSet);
-        var buttons = tabButtons.Value;
-        Add(ref buttons, newTabBut);
-        tabButtons.Value = buttons;
-        // Adjusts the settings menu size so tab buttons fit nicely
-        backTransform.anchorMax = newSize;
-        divTransform.anchorMax = newSize;
-        contentTransform.anchorMax = newSize;
-        closeTransform.anchorMin = newSize;
-        closeTransform.anchorMax = newSize;
-        tabsTransform.anchorMax = newSize;
-
+        //ScrollRect scrollRect = newSet.GetComponentInChildren<ScrollRect>(true);
+        Scrollbar scrollbar = newSet.GetComponentInChildren<Scrollbar>(true);
+        //scrollRect.verticalScrollbar = scrollbar;
+        scrollbar.value = 1;
+        VerticalLayoutGroup verticalLayoutGroup = newSet.GetComponentInChildren<VerticalLayoutGroup>(true); // This will fetch null if copied tab is "General"
+        ContentSizeFitter contentSizeFitter = verticalLayoutGroup.gameObject.AddComponent<ContentSizeFitter>();
+        contentSizeFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        contentSizeFitter.verticalFit = ContentSizeFitter.FitMode.MinSize;
         init = false;
     }
 
@@ -376,14 +437,14 @@ public class ExtraSettingsAPI : Mod
         init = true;
         if (tabGroup.SelectedTabButton == newTabBut)
             tabGroup.SelectTab(0);
-        Vector2 newSize = backTransform.anchorMax - new Vector2(0.13f, 0f);
-        backTransform.anchorMax = newSize;
-        divTransform.anchorMax = newSize;
-        contentTransform.anchorMax = newSize;
-        closeTransform.anchorMin = newSize;
-        closeTransform.anchorMax = newSize;
-        tabsTransform.anchorMax = newSize;
         var buttons = tabButtons.Value;
+        Vector2 newSize = new Vector2(tabsTransform.rect.width * buttons.Length.StepDown(), 0f);
+        backTransform.offsetMax -= newSize;
+        divTransform.offsetMax -= newSize;
+        contentTransform.offsetMax -= newSize;
+        closeTransform.offsetMin -= newSize;
+        closeTransform.offsetMax -= newSize;
+        tabsTransform.offsetMax -= newSize;
         Remove(ref buttons, newTabBut);
         tabButtons.Value = buttons;
         Destroy(newTabBut);
@@ -391,13 +452,24 @@ public class ExtraSettingsAPI : Mod
         Destroy(newTab);
     }
 
-    public static void destroyLocalizations(GameObject gO)
+    public static Mod GetMod(Type type)
     {
-        foreach (Localize localize in gO.GetComponentsInChildren<Localize>())
-        {
-            localize.enabled = false;
+        foreach (var m in mods.Keys)
+            if (m.GetType() == type)
+                return m;
+        return null;
+    }
+    public static EventCaller GetCallerFromMod(Mod mod)
+    {
+        if (mods.TryGetValue(mod,out var caller))
+            return caller;
+        return null;
+    }
+
+    public static void DestroyLocalizations(GameObject gO)
+    {
+        foreach (var localize in gO.GetComponentsInChildren<Localize>(true))
             DestroyImmediate(localize, true);
-        }
     }
 
     public static void generateSettings(Mod mod)
@@ -405,9 +477,9 @@ public class ExtraSettingsAPI : Mod
         generateSettings(modSettings[mod]);
     }
 
-    public static void generateSettings(modSettingContainer container)
+    public static void generateSettings(ModSettingContainer container)
     {
-        container.create();
+        container.Create();
     }
 
     public static void Add<T>(ref T[] array, T item)
@@ -426,39 +498,40 @@ public class ExtraSettingsAPI : Mod
         RemoveAt(ref array, array.IndexOf(item));
     }
 
-    public static void toggleSettings(bool isOnMainmenu)
+    public static void toggleSettings()
     {
-        foreach (modSettingContainer container in modSettings.Values)
-            container.toggleSettings(isOnMainmenu);
+        foreach (ModSettingContainer container in modSettings.Values)
+            container.ToggleSettings();
     }
 
-    public static void loadAllSettings()
+    /*public static void loadAllSettings()
     {
         foreach (ModData mod in ModManagerPage.modList)
-            tryLoadSettings(mod);
-    }
+            if (mod.modinfo.goInstance)
+                mod.modinfo.goInstance.AddComponent<WaitForFirstUpdate>().onFirstUpdate = delegate { tryLoadSettings(mod); };
+    }*/
 
     public static void loadSettings(ModData data, JSONObject settings)
     {
         Mod mod = data.modinfo.mainClass;
-        if (mod == null)
+        if (!mod)
         {
             waitingToLoad.Add(data);
             return;
         }
         if (mods.ContainsKey(mod))
             return;
-        if (waitingToLoad.Contains(data))
-            waitingToLoad.Remove(data);
+
+            waitingToLoad.RemoveAll( x=> x == data);
         try
         {
-            modSettingContainer newSettings = new modSettingContainer(mod, settings);
+            ModSettingContainer newSettings = new ModSettingContainer(mod, settings);
             EventCaller caller = new EventCaller(mod);
             modSettings.Add(mod, newSettings);
             mods.Add(mod, caller);
-            caller.Call(EventCaller.EventTypes.load);
+            caller.Call(EventCaller.EventTypes.Load);
             if (!init)
-                caller.Call(EventCaller.EventTypes.open);
+                caller.Call(EventCaller.EventTypes.Open);
         }
         catch (Exception err)
         {
@@ -470,25 +543,37 @@ public class ExtraSettingsAPI : Mod
     {
         foreach (ModData mod in ModManagerPage.modList)
             if (modName == mod.jsonmodinfo.name)
-                tryLoadSettings(mod);
+                TryLoadSettings(mod);
     }
 
     public static void tryLoadSettings(Mod mod)
     {
-        tryLoadSettings(mod.modlistEntry);
+        TryLoadSettings(mod.modlistEntry);
     }
 
-    public static void tryLoadSettings(ModData data)
+    public static void TryLoadSettings(ModData data)
     {
         var current = CultureInfo.CurrentCulture;
         CultureInfo.CurrentCulture = CultureInfo.GetCultureInfoByIetfLanguageTag("en-NZ");
-        JSONObject modJson = new JSONObject(Encoding.Default.GetString(data.modinfo.modFiles["modinfo.json"]));
+        JSONObject modJson = null;
+        foreach (var f in data.modinfo.modFiles)
+            if (f.Key.ToLower().EndsWith("modinfo.json"))
+            {
+                try
+                {
+                    Assembly.GetExecutingAssembly().GetType("F");
+                    modJson = new JSONObject(Encoding.Default.GetString(f.Value));
+                    break;
+                } catch { }
+            }
         CultureInfo.CurrentCulture = current;
-        if (modJson.HasField("modSettings"))
+        if (modJson == null)
+            LogWarning($"Failed to find/read modjson file for {data.jsonmodinfo.name}");
+        else if (modJson.HasField("modSettings"))
             loadSettings(data, modJson.GetField("modSettings"));
     }
 
-    public static void updateAllSettingBacks()
+    public static void UpdateAllSettingBacks()
     {
         var f = false;
         foreach (var c in modSettings)
@@ -499,32 +584,45 @@ public class ExtraSettingsAPI : Mod
                     c.Value.title.GetComponent<Image>().enabled = f;
                     f = !f;
                 }
-                foreach (var s in c.Value.settings)
-                    if (s != null && s.control && s.control.activeSelf && s.setBackImage(f))
+                foreach (var s in c.Value.allSettings)
+                    if (s != null && s.control && s.control.activeSelf && s.SetBackImage(f))
                         f = !f;
             }
     }
 
-    public static void modUnloaded(Mod mod)
+    public override void ModEvent_OnModUnloaded(Mod mod)
     {
         removeSettings(mod);
+        base.ModEvent_OnModUnloaded(mod);
+    }
+    public override void ModEvent_OnModLoaded(Mod mod)
+    {
+        if (mod)
+            mod.gameObject.AddComponent<WaitForFirstUpdate>().onFirstUpdate = () => tryLoadSettings(mod);
+        base.ModEvent_OnModUnloaded(mod);
     }
 
     public static void removeSettings(Mod mod)
     {
-        if (mod == null || !mods.ContainsKey(mod))
+        if (!mod || !mods.ContainsKey(mod))
             return;
-        modSettings[mod].destroy();
+        modSettings[mod].Destroy();
         modSettings.Remove(mod);
+        mods[mod].APIBool.Value = false;
         mods.Remove(mod);
     }
 
-    public static T getSetting<T>(Mod mod, string settingName) where T : modSetting
+    public static T getSetting<T>(Mod mod, string settingName) where T : ModSetting
     {
-        foreach (modSetting setting in modSettings[mod].settings)
-            if (setting is T && setting.name == settingName)
-                return setting as T;
-        foreach (KeyValuePair<modSetting.settingType, Type> pair in modSetting.matches)
+        if (modSettings[mod].settings.TryGetValue(settingName, out var lookup))
+        {
+            if (lookup is T o)
+                return o;
+            foreach (var setting in modSettings[mod].allSettings)
+                if (setting is T o2 && setting.name == settingName)
+                    return o2;
+        }
+        foreach (KeyValuePair<ModSetting.SettingType, Type> pair in ModSetting.matches)
             if (pair.Value == typeof(T))
                 throw new NullReferenceException("Could not find " + pair.Key.ToString() + " setting " + settingName + " for " + mod.modlistEntry.jsonmodinfo.name);
         throw new NullReferenceException("Could not find " + typeof(T).Name + " setting " + settingName + " for " + mod.modlistEntry.jsonmodinfo.name);
@@ -532,144 +630,252 @@ public class ExtraSettingsAPI : Mod
 
     public static bool getCheckboxState(Mod mod, string settingName)
     {
-        return getSetting<modSetting_checkbox>(mod, settingName).value;
+        if (mod)
+            return getSetting<ModSetting_Checkbox>(mod, settingName).value;
+        return default;
     }
 
     public static int getComboboxSelectedIndex(Mod mod, string settingName)
     {
-        return getSetting<modSetting_combobox>(mod, settingName).index;
+        if (mod)
+            return getSetting<ModSetting_Combobox>(mod, settingName).index;
+        return default;
     }
 
     public static string getComboboxSelectedItem(Mod mod, string settingName)
     {
-        return getSetting<modSetting_combobox>(mod, settingName).value;
+        if (mod)
+            return getSetting<ModSetting_Combobox>(mod, settingName).value;
+        return default;
     }
 
     public static string[] getComboboxContent(Mod mod, string settingName)
     {
-        return getSetting<modSetting_combobox>(mod, settingName).getContent();
+        if (mod)
+            return getSetting<ModSetting_Combobox>(mod, settingName).getContent();
+        return default;
     }
 
     public static float getSliderValue(Mod mod, string settingName)
     {
-        modSetting_slider slider = getSetting<modSetting_slider>(mod, settingName);
-        return slider.roundValue;
+        if (mod)
+            return getSetting<ModSetting_Slider>(mod, settingName).roundValue;
+        return default;
     }
 
     public static float getSliderRealValue(Mod mod, string settingName)
     {
-        return getSetting<modSetting_slider>(mod, settingName).value;
+        if (mod)
+            return getSetting<ModSetting_Slider>(mod, settingName).value;
+        return default;
     }
 
     public static string getKeybindName(Mod mod, string settingName)
     {
-        return getKeybind(mod, settingName).Identifier;
+        if (mod)
+            return getKeybind(mod, settingName).Identifier;
+        return default;
     }
 
     public static KeyCode getKeybind_main(Mod mod, string settingName)
     {
-        return getKeybind(mod, settingName).MainKey;
+        if (mod)
+            return getKeybind(mod, settingName).MainKey;
+        return default;
     }
 
     public static KeyCode getKeybind_alt(Mod mod, string settingName)
     {
-        return getKeybind(mod, settingName).AltKey;
+        if (mod)
+            return getKeybind(mod, settingName).AltKey;
+        return default;
     }
+    public static KeyCode getKeybindMain(Mod mod, string settingName) => getKeybind_main(mod, settingName);
+    public static KeyCode getKeybindAlt(Mod mod, string settingName) => getKeybind_alt(mod, settingName);
 
     public static Keybind getKeybind(Mod mod, string settingName)
     {
-        return getSetting<modSetting_keybind>(mod, settingName).value;
+        if (mod)
+            return getSetting<ModSetting_Keybind>(mod, settingName).value;
+        return default;
     }
 
     public static string getInputValue(Mod mod, string settingName)
     {
-        return getSetting<modSetting_input>(mod, settingName).value;
+        if (mod)
+            return getSetting<ModSetting_Input>(mod, settingName).value;
+        return default;
     }
 
     public static string getDataValue(Mod mod, string settingName, string subname)
     {
-        return getSetting<modSetting_data>(mod, settingName).getValue(subname);
+        if (mod)
+            return getSetting<ModSetting_Data>(mod, settingName).getValue(subname);
+        return default;
     }
 
     public static string[] getDataNames(Mod mod, string settingName)
     {
-        return getSetting<modSetting_data>(mod, settingName).getNames();
+        if (mod)
+            return getSetting<ModSetting_Data>(mod, settingName).getNames();
+        return default;
     }
 
     public static string getSettingsText(Mod mod, string settingName)
     {
-        return getSetting<modSetting>(mod, settingName).nameText;
+        if (mod)
+            return getSetting<ModSetting>(mod, settingName).nameText;
+        return default;
+    }
+
+    public static string getSettingText(Mod mod, string settingName) => getSettingsText(mod, settingName);
+    public static string getText(Mod mod, string settingName) => getSettingsText(mod, settingName);
+
+    public static string[] getButtons(Mod mod, string settingName)
+    {
+        if (mod)
+            return getSetting<ModSetting_MultiButton>(mod, settingName).GetValue();
+        return default;
     }
 
     public static void setCheckboxState(Mod mod, string settingName, bool value)
     {
-        getSetting<modSetting_checkbox>(mod, settingName).setValue(value);
+        if (mod)
+            getSetting<ModSetting_Checkbox>(mod, settingName).SetValue(value);
+        generateSaveJson();
     }
 
     public static void setComboboxSelectedIndex(Mod mod, string settingName, int value)
     {
-        getSetting<modSetting_combobox>(mod, settingName).setValue(value);
+        if (mod)
+            getSetting<ModSetting_Combobox>(mod, settingName).SetValue(value);
+        generateSaveJson();
     }
 
     public static void setComboboxSelectedItem(Mod mod, string settingName, string value)
     {
-        getSetting<modSetting_combobox>(mod, settingName).setValue(value);
+        if (mod)
+            getSetting<ModSetting_Combobox>(mod, settingName).SetValue(value);
+        generateSaveJson();
     }
 
     public static void setComboboxContent(Mod mod, string settingName, string[] items)
     {
-        getSetting<modSetting_combobox>(mod, settingName).setContent(items);
+        if (mod)
+            getSetting<ModSetting_Combobox>(mod, settingName).setContent(items);
+        generateSaveJson();
     }
 
     public static void addComboboxContent(Mod mod, string settingName, string item)
     {
-        getSetting<modSetting_combobox>(mod, settingName).addContent(item);
+        if (mod)
+            getSetting<ModSetting_Combobox>(mod, settingName).addContent(item);
+        generateSaveJson();
     }
 
     public static void resetComboboxContent(Mod mod, string settingName)
     {
-        getSetting<modSetting_combobox>(mod, settingName).resetContent();
+        if (mod)
+            getSetting<ModSetting_Combobox>(mod, settingName).resetContent();
+        generateSaveJson();
     }
 
     public static void setSliderValue(Mod mod, string settingName, float value)
     {
-        getSetting<modSetting_slider>(mod, settingName).setValue(value);
+        if (mod)
+            getSetting<ModSetting_Slider>(mod, settingName).SetValue(value);
+        generateSaveJson();
     }
 
     public static void setKeybind_main(Mod mod, string settingName, KeyCode value)
     {
-        getSetting<modSetting_keybind>(mod, settingName).setValue(value, true);
+        if (mod)
+            getSetting<ModSetting_Keybind>(mod, settingName).SetValue(value, true);
+        generateSaveJson();
     }
 
     public static void setKeybind_alt(Mod mod, string settingName, KeyCode value)
     {
-        getSetting<modSetting_keybind>(mod, settingName).setValue(value, false);
+        if (mod)
+            getSetting<ModSetting_Keybind>(mod, settingName).SetValue(value, false);
+        generateSaveJson();
     }
+
+    public static void setKeybindMain(Mod mod, string settingName, KeyCode value) => setKeybind_main(mod, settingName, value);
+
+    public static void setKeybindAlt(Mod mod, string settingName, KeyCode value) => setKeybind_alt(mod, settingName, value);
 
     public static void setInputValue(Mod mod, string settingName, string value)
     {
-        getSetting<modSetting_input>(mod, settingName).setValue(value);
+        if (mod)
+            getSetting<ModSetting_Input>(mod, settingName).SetValue(value);
+        generateSaveJson();
     }
 
     public static void setDataValue(Mod mod, string settingName, string subname, string value)
     {
-        getSetting<modSetting_data>(mod, settingName).setValue(subname, value);
+        if (mod)
+            getSetting<ModSetting_Data>(mod, settingName).SetValue(subname, value);
+    }
+
+    public static void setDataValues(Mod mod, string settingName, Dictionary<string, string> value)
+    {
+        if (mod)
+            getSetting<ModSetting_Data>(mod, settingName).SetValues(value);
     }
 
     public static void setSettingsText(Mod mod, string settingName, string newText)
     {
-        getSetting<modSetting>(mod, settingName).setText(newText);
+        if (mod)
+            getSetting<ModSetting>(mod, settingName).SetText(newText);
+    }
+
+    public static void setText(Mod mod, string settingName, string newText) => setSettingsText(mod, settingName, newText);
+    public static void setSettingText(Mod mod, string settingName, string newText) => setSettingsText(mod, settingName, newText);
+
+    public static void setButtons(Mod mod, string settingName, string[] newButtons)
+    {
+        if (mod)
+            getSetting<ModSetting_MultiButton>(mod, settingName).SetValue(newButtons);
     }
 
     public static void resetSetting(Mod mod, string settingName)
     {
-        getSetting<modSetting>(mod, settingName).resetValue();
+        if (mod)
+            getSetting<ModSetting>(mod, settingName).ResetValue();
+        generateSaveJson();
     }
 
     public static void resetSettings(Mod mod)
     {
-        foreach (modSetting setting in modSettings[mod].settings)
-            setting.resetValue();
+        if (mod)
+            foreach (var setting in modSettings[mod].allSettings)
+                setting.ResetValue();
+        generateSaveJson();
+    }
+
+    public static void resetAllSettings(Mod mod) => resetSettings(mod);
+
+    public static Mod getModFromType(Type type)
+    {
+        foreach (var m in mods)
+            if (m.Key.GetType() == type)
+                return m.Key;
+        return null;
+    }
+
+    public static Mod getModFromAssembly(Type type)
+    {
+        foreach (var m in mods)
+            if (m.Key.GetType().Assembly == type.Assembly)
+                return m.Key;
+        return null;
+    }
+
+    public static void checkSettingVisibility(Mod mod)
+    {
+        if (mod)
+            modSettings[mod].ToggleSettings();
     }
 }
 
@@ -679,16 +885,16 @@ static public class ExtentionMethods
     {
         return Array.IndexOf(array, item);
     }
-    public static GameObject AddImageObject(this GameObject gameObject, float scale)
+    public static GameObject AddImageObject(this GameObject gameObject, float thickness)
     {
-        GameObject imageContainer = new GameObject();
-        imageContainer.transform.SetParent(gameObject.transform, false);
+        GameObject imageContainer = new GameObject("Divider");
         RectTransform trans = imageContainer.AddComponent<RectTransform>();
-        trans.localScale = Vector3.one;
-        trans.anchoredPosition = Vector2.zero;
+        imageContainer.transform.SetParent(gameObject.transform, false);
         Image image = imageContainer.AddComponent<Image>();
-        image.rectTransform.offsetMin = new Vector2(-370 * scale, -30);
-        image.rectTransform.offsetMax = new Vector2(370 * scale, -20f);
+        trans.anchorMin = new Vector2(0, 0);
+        trans.anchorMax = new Vector2(1, 0);
+        trans.offsetMin = new Vector2(10, 0);
+        trans.offsetMax = new Vector2(-10, thickness);
         image.sprite = ExtraSettingsAPI.dividerSprite;
         return imageContainer;
     }
@@ -727,69 +933,111 @@ static public class ExtentionMethods
         else
             jsonObj.AddField(fieldName, JSONObject.CreateStringObject(data));
     }
+
+    public static bool NotWorldSave(this ModSetting.MenuType type) => type != ModSetting.MenuType.World && type != ModSetting.MenuType.WorldCustom;
+
+    public static string[] ToStringArray(this JSONObject obj)
+    {
+        var a = new string[obj.Count];
+        for (int i = 0; i < a.Length; i++)
+            a[i] = obj[i].str;
+        return a;
+    }
+
+    public static float StepUp(this int v) => 1f / v;
+    public static float StepDown(this int v) => 1 - ((v - 1f) / v);
+
+    public static void PrintAllFields(this object obj)
+    {
+        var s = new StringBuilder(obj.ToString());
+        var t = obj.GetType();
+        while (t != typeof(object))
+        {
+            foreach (var f in t.GetFields(~BindingFlags.Default))
+                if (!f.IsStatic)
+                {
+                    s.Append("\n - ");
+                    s.Append(f.FieldType.FullName);
+                    s.Append(" ");
+                    s.Append(f.DeclaringType.FullName);
+                    s.Append(".");
+                    s.Append(f.Name);
+                    s.Append(" = ");
+                    s.Append(f.GetValue(obj));
+                }
+            foreach (var p in t.GetProperties(~BindingFlags.Default))
+                if (p.GetGetMethod() != null && !p.GetGetMethod().IsStatic && p.GetGetMethod().GetParameters().Length == 0)
+                {
+                    s.Append("\n - ");
+                    s.Append(p.GetGetMethod().ReturnType.FullName);
+                    s.Append(" ");
+                    s.Append(p.DeclaringType.FullName);
+                    s.Append(".");
+                    s.Append(p.Name);
+                    s.Append(" = ");
+                    s.Append(p.GetValue(obj));
+                }
+            t = t.BaseType;
+        }
+        Debug.Log(s.ToString());
+    }
 }
 
 [HarmonyPatch(typeof(Settings), "Open")]
-public class Patch_SettingsOpen
+static class Patch_SettingsOpen
 {
     static void Postfix()
     {
         ExtraSettingsAPI.insertNewSettingsMenu();
         foreach (EventCaller caller in ExtraSettingsAPI.mods.Values)
-            caller.Call(EventCaller.EventTypes.open);
+            caller.Call(EventCaller.EventTypes.Open);
     }
 }
 
 [HarmonyPatch(typeof(Settings), "Close")]
-public class Patch_SettingsClose
+static class Patch_SettingsClose
 {
-    static void Prefix(ref Settings __instance, ref bool __state)
-    {
-        __state = Traverse.Create(__instance).Field("optionsCanvas").GetValue<GameObject>().activeInHierarchy;
-    }
+    static void Prefix(ref Settings __instance, ref bool __state) => __state = Traverse.Create(__instance).Field("optionsCanvas").GetValue<GameObject>().activeInHierarchy;
     static void Postfix(ref bool __state)
     {
         if (__state)
         {
             ExtraSettingsAPI.generateSaveJson();
-
             foreach (EventCaller caller in ExtraSettingsAPI.mods.Values)
-                caller.Call(EventCaller.EventTypes.close);
+                caller.Call(EventCaller.EventTypes.Close);
             if (!ExtraSettingsAPI.init)
                 ExtraSettingsAPI.removeNewSettingsMenu();
         }
     }
 }
 
-[HarmonyPatch(typeof(BaseModHandler), "LoadMod")]
-public class Patch_ModLoad
+/*[HarmonyPatch(typeof(Transform), "parent", MethodType.Setter)]
+static class Patch_ModLoad
 {
-    static void Postfix(ref ModData moddata)
+    static void Postfix(Transform __instance, Transform __0)
     {
-        ExtraSettingsAPI.tryLoadSettings(moddata);
+        if (__0 == ModManagerPage.ModsGameObjectParent.transform)
+            __instance.gameObject.AddComponent<WaitForFirstUpdate>().onFirstUpdate = () => ExtraSettingsAPI.tryLoadSettings(__instance.GetComponent<Mod>());
     }
 }
 
 [HarmonyPatch(typeof(BaseModHandler), "UnloadMod")]
-public class Patch_ModUnload
+static class Patch_ModUnload
 {
-    static void Postfix(ref ModData moddata)
-    {
-        ExtraSettingsAPI.removeSettings(moddata.modinfo.mainClass);
-    }
-}
+    static void Postfix(ref ModData moddata) => ExtraSettingsAPI.modUnloaded(moddata.modinfo.mainClass);
+}*/
 
 [HarmonyPatch(typeof(UISlider), "Update")]
-public class Patch_SliderUpdate
+static class Patch_SliderUpdate
 {
     static bool Prefix(ref UISlider __instance)
     {
         if (__instance.name.StartsWith("ESAPI_"))
-            foreach (modSettingContainer container in ExtraSettingsAPI.modSettings.Values)
-                foreach (modSetting setting in container.settings)
-                    if (setting is modSetting_slider && (setting as modSetting_slider).UIslider == __instance)
+            foreach (ModSettingContainer container in ExtraSettingsAPI.modSettings.Values)
+                foreach (var setting in container.allSettings)
+                    if (setting is ModSetting_Slider s && s.UIslider == __instance)
                     {
-                        setting.update();
+                        setting.Update();
                         return false;
                     }
         return true;
@@ -797,21 +1045,39 @@ public class Patch_SliderUpdate
 }
 
 [HarmonyPatch(typeof(MyInput), "IdentifierToKeybind")]
-public class Patch_KeybindsReset
+static class Patch_KeybindsReset
 {
     static bool Prefix(ref string identifier, ref Keybind __result)
     {
-        if (modSetting_keybind.MyKeys != null && modSetting_keybind.MyKeys.Count > 0 && modSetting_keybind.MyKeys.ContainsKey(identifier))
+        if (ModSetting_Keybind.MyKeys != null && ModSetting_Keybind.MyKeys.Count > 0 && ModSetting_Keybind.MyKeys.ContainsKey(identifier))
         {
-            __result = modSetting_keybind.MyKeys[identifier];
+            __result = ModSetting_Keybind.MyKeys[identifier];
             return false;
         }
         return true;
     }
 }
 
+[HarmonyPatch(typeof(KeybindInterface))]
+static class Patch_EnterExitKeybind
+{
+    public static (KeybindInterface,bool) lastEntered;
+    [HarmonyPatch("PointerEnter")]
+    [HarmonyPrefix]
+    static void Enter(KeybindInterface __instance, KeyConnection key, KeyConnection ___mainKey)
+    {
+        lastEntered = (__instance, key == ___mainKey);
+    }
+    [HarmonyPatch("PointerExit")]
+    [HarmonyPrefix]
+    static void Exit()
+    {
+        lastEntered = default;
+    }
+}
+
 [HarmonyPatch(typeof(SaveAndLoad), "Save")]
-public class Patch_SaveGame
+static class Patch_SaveGame
 {
     static void Postfix(string filename)
     {
@@ -825,30 +1091,53 @@ public class Patch_SaveGame
 }
 
 [HarmonyPatch(typeof(LoadGameBox), "Button_LoadGame")]
-public class Patch_LoadGame
+static class Patch_LoadGame
 {
-    static void Postfix()
-    {
-        ExtraSettingsAPI.loadLocal(true);
-    }
+    static void Postfix() => ExtraSettingsAPI.loadLocal(true);
 }
 
 [HarmonyPatch(typeof(NewGameBox), "Button_CreateNewGame")]
-public class Patch_NewGame
+static class Patch_NewGame
 {
-    static void Postfix()
-    {
-        ExtraSettingsAPI.loadLocal(false);
-    }
+    static void Postfix() => ExtraSettingsAPI.loadLocal(false);
 }
 
 [HarmonyPatch(typeof(LoadSceneManager), "LoadScene")]
-public class Patch_UnloadWorld
+static class Patch_UnloadWorld
 {
     static void Postfix(ref string sceneName)
     {
-        if (sceneName == Semih_Network.MenuSceneName)
+        if (sceneName == Raft_Network.MenuSceneName)
             ExtraSettingsAPI.LocalConfig = null;
+    }
+}
+
+static class Patch_ReplaceAPICalls
+{
+    public static HashSet<MethodInfo> methodsToLookFor;
+    public static IEnumerable<MethodBase> TargetMethods(Assembly assembly)
+    {
+        var l = new List<MethodBase>();
+        foreach (var t in assembly.GetTypes())
+            foreach (var m in t.GetMethods(~BindingFlags.Default))
+                try
+                {
+                    foreach (var i in PatchProcessor.GetCurrentInstructions(m, out var iL))
+                        if (i.opcode == OpCodes.Call && i.operand is MethodInfo method && methodsToLookFor.Contains(method))
+                        {
+                            l.Add(m);
+                            break;
+                        }
+                } catch { }
+        return l;
+    }
+    public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        foreach (var i in code)
+            if (i.opcode == OpCodes.Call && i.operand is MethodInfo method && methodsToLookFor.Contains(method) && !method.IsStatic)
+                i.opcode = OpCodes.Callvirt;
+        return code;
     }
 }
 
@@ -873,12 +1162,22 @@ public class ToggleImage : MonoBehaviour
     }
 }
 
+public class WaitForFirstUpdate : MonoBehaviour
+{
+    public Action onFirstUpdate;
+    void Update()
+    {
+        onFirstUpdate?.Invoke();
+        DestroyImmediate(this);
+    }
+}
+
 public class EventCaller
 {
     public Mod parent { get; }
     Traverse modTraverse;
     Dictionary<EventTypes, Traverse> settingsEvents = new Dictionary<EventTypes, Traverse>();
-    Traverse<bool> APIBool;
+    public Traverse<bool> APIBool;
     public EventCaller(Mod mod)
     {
         parent = mod;
@@ -890,6 +1189,8 @@ public class EventCaller
                 try
                 {
                     var fType = settingsField.GetValueType();
+                    if (fType == typeof(Type))
+                        throw new InvalidOperationException("Cannot create instance of class " + fType.FullName);
                     if (fType.IsAbstract)
                         throw new InvalidOperationException("Cannot create instance of abstract class " + fType.FullName);
                     if (fType.IsInterface)
@@ -904,27 +1205,181 @@ public class EventCaller
                     ExtraSettingsAPI.Log($"Found settings field of mod {parent.modlistEntry.jsonmodinfo.name}'s main class but failed to create an instance for it. You may need to create the class instance yourself.\n{e}");
                 }
             if (settingsField.GetValue() != null)
-                modTraverse = Traverse.Create(settingsField.GetValue());
+            {
+                if (settingsField.GetValue() is Type)
+                    modTraverse = Traverse.Create((Type)settingsField.GetValue());
+                else
+                    modTraverse = Traverse.Create(settingsField.GetValue());
+            }
         }
         foreach (KeyValuePair<EventTypes, string> pair in EventNames)
-            if (pair.Key != EventTypes.button)
+            if (pair.Key != EventTypes.Button)
                 settingsEvents.Add(pair.Key, modTraverse.Method(pair.Value, new Type[] { }, new object[] { }));
         APIBool = modTraverse.Field<bool>("ExtraSettingsAPI_Loaded");
         modTraverse.Field<Traverse>("ExtraSettingsAPI_Traverse").Value = ExtraSettingsAPI.self;
+        var patchedMethods = new HashSet<MethodInfo>();
+        foreach(var modMethod in (modTraverse.GetValue() as Type ?? modTraverse.GetValue().GetType()).GetMethods(~BindingFlags.Default))
+            if (modMethod.Name.StartsWith("ExtraSettingsAPI_") && !EventNames.ContainsValue(modMethod.Name))
+            {
+                var matches = new List<MethodInfo>();
+                MethodInfo m1 = null;
+                var s = -1;
+                var pars = default(List<int>);
+                foreach (var m in typeof(ExtraSettingsAPI).GetMethods(~BindingFlags.Default))
+                    if (m.Name.Equals(modMethod.Name.Remove(0, "ExtraSettingsAPI_".Length),StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        matches.Add(m);
+                        if (Transpiler.CheckPatchParameters(modMethod, m, out var l, out var skip) && (s == -1 || skip < s))
+                        {
+                            s = skip;
+                            m1 = m;
+                            pars = l;
+                        }
+                    }
+                if (matches.Count == 0)
+                    ExtraSettingsAPI.LogWarning($"{parent.modlistEntry.jsonmodinfo.name} >> Could not find any methods matching the name of method {modMethod.DeclaringType.FullName}::{modMethod}. You may have misspelled the method name or not meant to implement the ExtraSettingsAPI here");
+                else if (m1 == null)
+                    ExtraSettingsAPI.LogWarning($"{parent.modlistEntry.jsonmodinfo.name} >> Could not find suitable implementation for method {modMethod.DeclaringType.FullName}::{modMethod}. You may have misspelled the method name, not meant to implement the ExtraSettingsAPI here or used the wrong parameters. The following methods were found with the same name:" + matches.Join(y => "\n" + y.ReturnType?.FullName + " " + modMethod.Name + "(" + y.GetParameters().Skip(1).Join(x => x.ParameterType.FullName) + ")",""));
+                else
+                {
+                    try
+                    {
+                        Transpiler.newMethod = m1;
+                        Transpiler.modClass = parent.GetType();
+                        Transpiler.argumentPairs = pars;
+                        ExtraSettingsAPI.instance.harmony.Patch(modMethod, transpiler: new HarmonyMethod(typeof(Transpiler), nameof(Transpiler.Transpile)));
+                        patchedMethods.Add(modMethod);
+                    } catch (Exception e)
+                    {
+                        ExtraSettingsAPI.LogError($"An error occured while trying to implement the {modMethod.Name} method for the {parent.modlistEntry.jsonmodinfo.name} mod\n{e}");
+                    }
+                }
+            }
+        Patch_ReplaceAPICalls.methodsToLookFor = patchedMethods;
+        foreach (var m in Patch_ReplaceAPICalls.TargetMethods(parent.GetType().Assembly))
+            ExtraSettingsAPI.instance.harmony.Patch(m, transpiler: new HarmonyMethod(typeof(Patch_ReplaceAPICalls), nameof(Patch_ReplaceAPICalls.Transpiler)));
+    }
+
+    static class Transpiler
+    {
+        public static Type modClass;
+        public static MethodInfo newMethod;
+        public static List<int> argumentPairs;
+        public static IEnumerable<CodeInstruction> Transpile(IEnumerable<CodeInstruction> instructions, MethodBase method)
+        {
+            var bArgs = GetArguments(method);
+            var nArgs = GetArguments(newMethod);
+            CodeInstruction GetArg(int index) => (index >= 0 && index <= 3) ? new CodeInstruction(new[] { OpCodes.Ldarg_0, OpCodes.Ldarg_1, OpCodes.Ldarg_2, OpCodes.Ldarg_3 }[index]) : new CodeInstruction(OpCodes.Ldarg_S, index);
+            var code = new List<CodeInstruction>();
+            for (int i = 0; i < argumentPairs.Count; i++)
+            {
+                if (argumentPairs[i] == -1)
+                {
+                    code.AddRange(new[]
+                        {
+                            new CodeInstruction(OpCodes.Ldtoken,modClass),
+                            new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Type),"GetTypeFromHandle")),
+                            new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(ExtraSettingsAPI),nameof(ExtraSettingsAPI.GetMod)))
+                        });
+                    if (CanCastTo(nArgs[i], typeof(EventCaller)))
+                        code.Add(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(ExtraSettingsAPI), nameof(ExtraSettingsAPI.GetCallerFromMod))));
+                }
+                else if (argumentPairs[i] != -1 && CanCastTo(bArgs[argumentPairs[i]], nArgs[i]))
+                    code.Add(GetArg(argumentPairs[i]));
+                else if (CanCastTo(nArgs[i], typeof(Mod)))
+                        code.Add(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(ExtraSettingsAPI), nameof(ExtraSettingsAPI.GetCallerFromMod))));
+                    else
+                        code.AddRange(new[]
+                        {
+                            GetArg(argumentPairs[i]),
+                            new CodeInstruction(OpCodes.Ldfld, AccessTools.Field(typeof(EventCaller),nameof(parent)))
+                        });
+            }
+            code.AddRange(new[]
+            {
+                    new CodeInstruction(OpCodes.Call, newMethod),
+                    new CodeInstruction(OpCodes.Ret)
+                });
+            return code;
+        }
+
+        public static bool CheckPatchParameters(MethodInfo caller, MethodInfo target,out List<int> patchParams, out int skipped)
+        {
+            var callerParams = GetArguments(caller);
+            var targetParams = GetArguments(target);
+            patchParams = null;
+            skipped = 0;
+            if (CanCastTo(target.ReturnType,caller.ReturnType))
+            {
+                var l = new List<int>();
+                int i = 0;
+                while (i < callerParams.Count || l.Count < targetParams.Count)
+                    if (l.Count >= targetParams.Count)
+                    {
+                        skipped += callerParams.Count - i - 1;
+                        break;
+                    }
+                    else if (i < callerParams.Count && CanCastTo(callerParams[i], targetParams[l.Count], true))
+                    {
+                        l.Add(i);
+                        i++;
+                    }
+                    else
+                    {
+                        skipped++;
+                        if (CanCastTo(targetParams[l.Count], typeof(Mod), true))
+                            l.Add(-1);
+                        else
+                            i++;
+                    }
+                if (l.Count >= targetParams.Count)
+                {
+                    patchParams = l;
+                    return true;
+                }
+                //Debug.LogWarning($"Argument mismatch fail\nCaller arguments: {callerParams.Join(x => x.FullName)}\nTarget arguments: {targetParams.Join(x => x.FullName)}\nSkipped: {skipped}\nArgument connections: {l.Join()}");
+            }
+            //else
+                //Debug.LogWarning($"Return type fail");
+            return false;
+        }
+        static bool CanCastTo(Type objType, Type targetType, bool includeCustomCast = false)
+        {
+            if (targetType.IsAssignableFrom(objType))
+                return true;
+            if (includeCustomCast)
+            {
+                var f1 = CanCastTo(objType, typeof(EventCaller)) || CanCastTo(objType, typeof(Mod));
+                var f2 = CanCastTo(targetType, typeof(EventCaller)) || CanCastTo(targetType, typeof(Mod));
+                if (f1 && f2)
+                    return true;
+            }
+            return false;
+        }
+
+        static List<Type> GetArguments(MethodBase method)
+        {
+            var l = new List<Type>();
+            if (!method.IsStatic)
+                l.Add(method.DeclaringType);
+            foreach (var p in method.GetParameters())
+                l.Add(p.ParameterType);
+            return l;
+        }
     }
 
     public void Call(EventTypes eventType)
     {
-        if (eventType == EventTypes.button)
+        if (eventType == EventTypes.Button)
             return;
-        if (eventType == EventTypes.open)
+        if (eventType == EventTypes.Open)
         {
             ExtraSettingsAPI.generateSettings(parent);
-            Call(EventTypes.create);
+            Call(EventTypes.Create);
         }
-        if (eventType == EventTypes.load)
+        if (eventType == EventTypes.Load)
             APIBool.Value = true;
-        if (eventType == EventTypes.unload)
+        if (eventType == EventTypes.Unload)
             APIBool.Value = false;
         if (settingsEvents[eventType].MethodExists())
             try
@@ -933,18 +1388,66 @@ public class EventCaller
             }
             catch (Exception e)
             {
-                ExtraSettingsAPI.ErrorLog($"An exception occured in the setting {eventType} event of the {parent.modlistEntry.jsonmodinfo.name} mod\n{e.InnerException}");
+                ExtraSettingsAPI.LogError($"An exception occured in the setting {eventType} event of the {parent.modlistEntry.jsonmodinfo.name} mod\n{e.InnerException??e}");
             }
     }
 
-    public void ButtonPress(modSetting_button button)
+    public void ButtonPress(ModSetting_Button button)
     {
-        modTraverse.Method(EventNames[EventTypes.button], new Type[] { typeof(string) }, new object[] { button.name }).GetValue();
+        modTraverse.Method(EventNames[EventTypes.Button], new Type[] { typeof(string) }, new object[] { button.name }).GetValue();
+    }
+    public void ButtonPress(ModSetting_MultiButton button,int index)
+    {
+        modTraverse.Method(EventNames[EventTypes.Button], new Type[] { typeof(string), typeof(int) }, new object[] { button.name, index }).GetValue();
+    }
+
+    public string GetSliderText(ModSetting_Slider slider)
+    {
+        try
+        {
+            var t = modTraverse.Method(EventNames[EventTypes.Slider], slider.name, slider.value);
+            if (!t.MethodExists())
+            {
+                ExtraSettingsAPI.LogWarning($"{parent.name} does not contain an appropriate definition for {EventNames[EventTypes.Slider]}. Setting {slider.nameText} requires this because its display mode is {slider.valueType}");
+                return "{null}";
+            }
+            var r = t.GetValue();
+            if (r is string s)
+                return s;
+            if (r != null)
+                return r.ToString();
+        } catch (Exception e)
+        {
+            Debug.LogError(e);
+        }
+        return "{null}";
+    }
+
+    public bool GetSettingVisible(ModSetting setting)
+    {
+        try
+        {
+            var t = modTraverse.Method(EventNames[EventTypes.Access], setting.name);
+            if (!t.MethodExists())
+            {
+                ExtraSettingsAPI.LogWarning($"{parent.name} does not contain an appropriate definition for {EventNames[EventTypes.Access]}. Setting {setting.nameText} requires this because its access mode is {setting.access}");
+                return false;
+            }
+            var r = t.GetValue();
+            if (r is bool b)
+                return b;
+            ExtraSettingsAPI.LogWarning($"Return value of {EventNames[EventTypes.Access]} must be a bool. Mod {parent.name} returned {r?.GetType().ToString() ?? "null"}");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError(e);
+        }
+        return false;
     }
 
     public bool Equals(Mod obj)
     {
-        if (obj == null || GetType() != obj.GetType())
+        if (!obj || GetType() != obj.GetType())
         {
             return false;
         }
@@ -953,86 +1456,99 @@ public class EventCaller
 
     public enum EventTypes
     {
-        open,
-        close,
-        load,
-        unload,
-        button,
-        create
+        Open,
+        Close,
+        Load,
+        Unload,
+        Button,
+        Create,
+        Slider,
+        Access
     }
     public static Dictionary<EventTypes, string> EventNames = new Dictionary<EventTypes, string>
     {
-        { EventTypes.open, "ExtraSettingsAPI_SettingsOpen" },
-        { EventTypes.close, "ExtraSettingsAPI_SettingsClose" },
-        { EventTypes.load, "ExtraSettingsAPI_Load" },
-        { EventTypes.unload, "ExtraSettingsAPI_Unload" },
-        { EventTypes.button, "ExtraSettingsAPI_ButtonPress" },
-        { EventTypes.create, "ExtraSettingsAPI_SettingsCreate" }
+        { EventTypes.Open, "ExtraSettingsAPI_SettingsOpen" },
+        { EventTypes.Close, "ExtraSettingsAPI_SettingsClose" },
+        { EventTypes.Load, "ExtraSettingsAPI_Load" },
+        { EventTypes.Unload, "ExtraSettingsAPI_Unload" },
+        { EventTypes.Button, "ExtraSettingsAPI_ButtonPress" },
+        { EventTypes.Create, "ExtraSettingsAPI_SettingsCreate" },
+        { EventTypes.Slider, "ExtraSettingsAPI_HandleSliderText" },
+        { EventTypes.Access, "ExtraSettingsAPI_HandleSettingVisible" }
     };
 }
 
-public class modSetting
+public class ModSetting
 {
     public static bool useAlt = false;
     public string name { get; }
     public string nameText;
-    public modSettingContainer parent;
+    public ModSettingContainer parent;
     public Text text = null;
-    public menuType access;
+    public MenuType access;
     public GameObject control { get; private set; } = null;
+    public string section = null;
     Image backImage;
 
-    public modSetting(JSONObject source, modSettingContainer parent)
+    public ModSetting(JSONObject source, ModSettingContainer parent)
     {
         name = source.GetField("name").str;
         if (source.HasField("text"))
             nameText = source.GetField("text").str;
         else
             nameText = name;
-        access = menuType.both;
+        access = MenuType.Both;
         if (source.HasField("access"))
             Enum.TryParse(source.GetField("access").str, true, out access);
+        if (source.HasField("section"))
+            section = source.GetField("section").str;
         this.parent = parent;
     }
 
-    public enum settingType
+    public enum SettingType
     {
-        checkbox,
-        slider,
-        combobox,
-        keybind,
-        button,
-        text,
-        data,
-        input
+        Checkbox,
+        Slider,
+        Combobox,
+        Keybind,
+        Button,
+        Text,
+        Data,
+        Input,
+        MultiButton,
+        Section
     }
 
-    public enum menuType
+    public enum MenuType
     {
-        both,
-        mainmenu,
-        world,
-        globalworld
+        Both,
+        MainMenu,
+        World,
+        GlobalWorld,
+        WorldCustom,
+        GlobalCustom
     }
 
-    public static Dictionary<settingType, Type> matches = new Dictionary<settingType, Type>
+    public static Dictionary<SettingType, Type> matches = new Dictionary<SettingType, Type>
     {
-        {settingType.checkbox, typeof(modSetting_checkbox) },
-        {settingType.slider, typeof(modSetting_slider) },
-        {settingType.combobox, typeof(modSetting_combobox) },
-        {settingType.keybind, typeof(modSetting_keybind) },
-        {settingType.button, typeof(modSetting_button) },
-        {settingType.text, typeof(modSetting_text) },
-        {settingType.data, typeof(modSetting_data) },
-        {settingType.input, typeof(modSetting_input) }
+        {SettingType.Checkbox, typeof(ModSetting_Checkbox) },
+        {SettingType.Slider, typeof(ModSetting_Slider) },
+        {SettingType.Combobox, typeof(ModSetting_Combobox) },
+        {SettingType.Keybind, typeof(ModSetting_Keybind) },
+        {SettingType.Button, typeof(ModSetting_Button) },
+        {SettingType.Text, typeof(ModSetting_Text) },
+        {SettingType.Data, typeof(ModSetting_Data) },
+        {SettingType.Input, typeof(ModSetting_Input) },
+        {SettingType.MultiButton, typeof(ModSetting_MultiButton) },
+        {SettingType.Section, typeof(ModSetting_Section) }
     };
 
-    public static modSetting createSetting(JSONObject source, modSettingContainer parent)
+    public static ModSetting CreateSetting(JSONObject source, ModSettingContainer parent)
     {
-        settingType type;
+        SettingType type;
         try
         {
-            type = (settingType)Enum.Parse(typeof(settingType), source.GetField("type").str);
+            type = (SettingType)Enum.Parse(typeof(SettingType), source.GetField("type").str, true);
         }
         catch (Exception err)
         {
@@ -1044,7 +1560,7 @@ public class modSetting
         }
         try
         {
-            return (modSetting)matches[type].GetConstructor(new Type[] { typeof(JSONObject), typeof(modSettingContainer) }).Invoke(new object[] { source, parent });
+            return (ModSetting)matches[type].GetConstructor(new Type[] { typeof(JSONObject), typeof(ModSettingContainer) }).Invoke(new object[] { source, parent });
         }
         catch
         {
@@ -1052,21 +1568,24 @@ public class modSetting
         }
     }
 
-    virtual public void setGameObject(GameObject go)
+    virtual public void SetGameObject(GameObject go)
     {
         control = go;
         control.name = parent.ModName + "." + name;
         control.transform.SetParent(ExtraSettingsAPI.newOptCon.transform, false);
-        text = control.GetComponentInChildren<Text>();
-        text.text = nameText;
-        if (!(this is modSetting_button))
+        text = control.GetComponentInChildren<Text>(true);
+        if (text)
         {
-            text.rectTransform.offsetMax += new Vector2(text.preferredWidth - text.rectTransform.sizeDelta.x, 0);
+            text.text = nameText;
+            if (!(this is ModSetting_Button))
+            {
+                text.rectTransform.offsetMax += new Vector2(text.preferredWidth - text.rectTransform.sizeDelta.x, 0);
+            }
         }
-        backImage = control.GetComponent<Image>() ?? control.GetComponentInChildren<Image>();
+        backImage = control.GetComponent<Image>() ?? control.GetComponentInChildren<Image>(true);
     }
 
-    public bool setBackImage(bool state)
+    public bool SetBackImage(bool state)
     {
         if (!backImage)
             return false;
@@ -1074,93 +1593,135 @@ public class modSetting
         return true;
     }
 
-    virtual public void setText(string newText)
+    virtual public void SetText(string newText)
     {
         nameText = newText;
-        if (text != null)
+        if (text)
         {
             text.text = newText;
-            if (!(this is modSetting_button))
+            if (!(this is ModSetting_Button))
             {
                 text.rectTransform.offsetMax += new Vector2(text.preferredWidth - text.rectTransform.sizeDelta.x, 0);
             }
         }
     }
 
-    virtual public void create() { }
-    virtual public void destroy()
+    virtual public void Create() { }
+    virtual public void Destroy()
     {
         Object.Destroy(control);
         control = null;
     }
-    virtual public void update() { }
-    virtual public void loadSettings() { }
-    virtual public void resetValue() { }
-    virtual public JSONObject generateSaveJson() { return new JSONObject(); }
+    virtual public void Update() { }
+    virtual public void LoadSettings() { }
+    virtual public void ResetValue() { }
+    virtual public JSONObject GenerateSaveJson() { return new JSONObject(); }
+
+    public bool ShouldShow(bool isOnMainMenu)
+    {
+        bool res;
+        if (access == MenuType.Both)
+            res = true;
+        else if (isOnMainMenu)
+        {
+            if (access == MenuType.MainMenu)
+                res = true;
+            else
+                res = access == MenuType.GlobalCustom && ExtraSettingsAPI.mods[parent.parent].GetSettingVisible(this);
+        }
+        else if (access == MenuType.WorldCustom && ExtraSettingsAPI.mods[parent.parent].GetSettingVisible(this))
+            res = true;
+        else
+            res = access == MenuType.GlobalWorld || access == MenuType.World;
+        if (res)
+        {
+            var s = section;
+            while (s != null && parent.settings.TryGetValue(s,out var p))
+            {
+                if (p is ModSetting_Section m)
+                {
+                    if (!m.open)
+                        return false;
+                    s = p.section;
+                    continue;
+                }
+                foreach (var i in parent.allSettings)
+                    if (i.name == section && i is ModSetting_Section m2)
+                    {
+                        if (!m2.open)
+                            return false;
+                        s = i.section;
+                        continue;
+                    }
+                break;
+            }
+        }
+        return res;
+    }
 }
 
-public class modSetting_checkbox : modSetting
+public class ModSetting_Checkbox : ModSetting
 {
     public Toggle checkbox = null;
     public bool defaultValue;
     public bool value;
-    public modSetting_checkbox(JSONObject source, modSettingContainer parent) : base(source, parent)
+    public ModSetting_Checkbox(JSONObject source, ModSettingContainer parent) : base(source, parent)
     {
         defaultValue = source.GetField("default").b;
-        if (access != menuType.world)
-            loadSettings();
+        if (access.NotWorldSave())
+            LoadSettings();
         else
             value = defaultValue;
     }
 
-    public void setValue(bool newValue)
+    public void SetValue(bool newValue)
     {
-        if (checkbox == null)
+        if (!checkbox)
             value = newValue;
         else
             checkbox.isOn = newValue;
     }
 
-    public override void setGameObject(GameObject go)
+    public override void SetGameObject(GameObject go)
     {
-        base.setGameObject(go);
-        checkbox = control.GetComponentInChildren<Toggle>();
-        setValue(value);
+        base.SetGameObject(go);
+        checkbox = control.GetComponentInChildren<Toggle>(true);
+        SetValue(value);
         checkbox.onValueChanged.AddListener(delegate { value = checkbox.isOn; });
     }
 
-    public override void create()
+    public override void Create()
     {
-        setGameObject(Object.Instantiate(ExtraSettingsAPI.checkboxPrefab));
+        SetGameObject(Object.Instantiate(ExtraSettingsAPI.checkboxPrefab));
     }
 
-    public override void destroy()
+    public override void Destroy()
     {
-        base.destroy();
+        base.Destroy();
         checkbox = null;
     }
 
-    public override JSONObject generateSaveJson()
+    public override JSONObject GenerateSaveJson()
     {
         return new JSONObject(value);
     }
 
-    public override void loadSettings()
+    public override void LoadSettings()
     {
-        JSONObject saved = parent.getSavedSettings(this);
+        JSONObject saved = parent.GetSavedSettings(this);
         if (saved != null && !saved.IsNull)
-            value = saved.b;
+            value = saved.IsBool ? saved.b : saved.IsNumber ? saved.n != 0 : saved.IsString ? bool.TryParse(saved.str, out var v) ? v : defaultValue : defaultValue;
         else
             value = defaultValue;
     }
 
-    public override void resetValue()
+    public override void ResetValue()
     {
-        setValue(defaultValue);
+        SetValue(defaultValue);
     }
 }
 
-public class modSetting_combobox : modSetting
+public class ModSetting_Combobox : ModSetting
 {
     public Dropdown combobox = null;
     public string defaultValue;
@@ -1169,7 +1730,7 @@ public class modSetting_combobox : modSetting
     public string value;
     public int index;
     bool contentHasChanged;
-    public modSetting_combobox(JSONObject source, modSettingContainer parent) : base(source, parent)
+    public ModSetting_Combobox(JSONObject source, ModSettingContainer parent) : base(source, parent)
     {
         contentHasChanged = false;
         defaultValue = source.GetField("default").str;
@@ -1187,30 +1748,30 @@ public class modSetting_combobox : modSetting
             defaultValues = new string[0];
         }
         values = defaultValues;
-        if (access != menuType.world)
-            loadSettings();
+        if (access.NotWorldSave())
+            LoadSettings();
         else
             value = defaultValue;
         index = values.IndexOf(value);
     }
 
-    public override void setGameObject(GameObject go)
+    public override void SetGameObject(GameObject go)
     {
-        base.setGameObject(go);
-        combobox = control.GetComponentInChildren<Dropdown>();
+        base.SetGameObject(go);
+        combobox = control.GetComponentInChildren<Dropdown>(true);
         List<Dropdown.OptionData> options = new List<Dropdown.OptionData>();
         foreach (string item in values)
             options.Add(new Dropdown.OptionData(item));
         combobox.ClearOptions();
         combobox.AddOptions(options);
-        setValue(value);
+        SetValue(value);
         index = combobox.value;
         combobox.onValueChanged.AddListener(delegate { index = combobox.value; value = values[index]; });
     }
 
-    public void setValue(int newValue)
+    public void SetValue(int newValue)
     {
-        if (combobox == null)
+        if (!combobox)
         {
             index = newValue;
             value = values[index];
@@ -1219,9 +1780,9 @@ public class modSetting_combobox : modSetting
             combobox.value = newValue;
     }
 
-    public void setValue(string newValue)
+    public void SetValue(string newValue)
     {
-        if (combobox == null)
+        if (!combobox)
         {
             index = Math.Max(values.IndexOf(newValue), 0);
             value = values[index];
@@ -1230,18 +1791,18 @@ public class modSetting_combobox : modSetting
             combobox.value = Math.Max(values.IndexOf(newValue), 0);
     }
 
-    public override void create()
+    public override void Create()
     {
-        setGameObject(Object.Instantiate(ExtraSettingsAPI.comboboxPrefab));
+        SetGameObject(Object.Instantiate(ExtraSettingsAPI.comboboxPrefab));
     }
 
-    public override void destroy()
+    public override void Destroy()
     {
-        base.destroy();
+        base.Destroy();
         combobox = null;
     }
 
-    public override JSONObject generateSaveJson()
+    public override JSONObject GenerateSaveJson()
     {
         JSONObject store = new JSONObject();
         store.AddField("value", value);
@@ -1255,15 +1816,15 @@ public class modSetting_combobox : modSetting
         return store;
     }
 
-    public override void loadSettings()
+    public override void LoadSettings()
     {
-        JSONObject saved = parent.getSavedSettings(this);
+        JSONObject saved = parent.GetSavedSettings(this);
         if (saved != null && !saved.IsNull)
         {
             if (saved.IsString)
             {
                 resetContent();
-                setValue(saved.str);
+                SetValue(saved.str);
             }
             else
             {
@@ -1276,15 +1837,20 @@ public class modSetting_combobox : modSetting
                 else
                     resetContent();
                 if (saved.HasField("value"))
-                    setValue(saved.GetField("value").str);
+                {
+                    if (saved.GetField("value").IsNumber)
+                        SetValue((int)saved.GetField("value").n);
+                    else
+                        SetValue(saved.GetField("value").IsString ? saved.GetField("value").str : defaultValue);
+                }
                 else
-                    setValue(defaultValue);
+                    SetValue(defaultValue);
             }
         }
         else
         {
             resetContent();
-            setValue(defaultValue);
+            SetValue(defaultValue);
         }
         index = values.IndexOf(value);
     }
@@ -1293,7 +1859,7 @@ public class modSetting_combobox : modSetting
     {
         contentHasChanged = true;
         values = items;
-        if (combobox != null)
+        if (combobox)
         {
             List<Dropdown.OptionData> options = new List<Dropdown.OptionData>();
             foreach (string item in items)
@@ -1307,7 +1873,7 @@ public class modSetting_combobox : modSetting
         contentHasChanged = true;
         Array.Resize(ref values, values.Length + 1);
         values[values.Length - 1] = item;
-        if (combobox != null)
+        if (combobox)
             combobox.options.Add(new Dropdown.OptionData(item));
     }
 
@@ -1320,7 +1886,7 @@ public class modSetting_combobox : modSetting
     {
         contentHasChanged = false;
         values = defaultValues;
-        if (combobox != null)
+        if (combobox)
         {
             List<Dropdown.OptionData> options = new List<Dropdown.OptionData>();
             foreach (string item in values)
@@ -1329,20 +1895,20 @@ public class modSetting_combobox : modSetting
         }
     }
 
-    public override void resetValue()
+    public override void ResetValue()
     {
         resetContent();
-        setValue(defaultValue);
+        SetValue(defaultValue);
     }
 }
 
-public class modSetting_slider : modSetting
+public class ModSetting_Slider : ModSetting
 {
     public Slider slider = null;
     public UISlider UIslider = null;
     public Text sliderText = null;
     public float defaultValue;
-    public sliderType valueType;
+    public SliderType valueType;
     public float minValue;
     public float maxValue;
     public int rounding;
@@ -1354,13 +1920,13 @@ public class modSetting_slider : modSetting
             return (float)Math.Round(value, rounding + (int)valueType * 2);
         }
     }
-    public modSetting_slider(JSONObject source, modSettingContainer parent) : base(source, parent)
+    public ModSetting_Slider(JSONObject source, ModSettingContainer parent) : base(source, parent)
     {
         if (source.HasField("default"))
             defaultValue = source.GetField("default").n;
         else
             defaultValue = 0;
-        valueType = sliderType.number;
+        valueType = SliderType.Number;
         minValue = 0;
         maxValue = 100;
         rounding = 0;
@@ -1379,20 +1945,20 @@ public class modSetting_slider : modSetting
             if (range.HasField("decimals"))
                 rounding = (int)range.GetField("decimals").n;
         }
-        if (access != menuType.world)
-            loadSettings();
+        if (access.NotWorldSave())
+            LoadSettings();
         else
             value = defaultValue;
     }
 
-    override public void setGameObject(GameObject go)
+    override public void SetGameObject(GameObject go)
     {
-        base.setGameObject(go);
-        slider = control.GetComponentInChildren<Slider>();
+        base.SetGameObject(go);
+        slider = control.GetComponentInChildren<Slider>(true);
         slider.minValue = minValue;
         slider.maxValue = maxValue;
-        setValue(value);
-        UIslider = control.GetComponentInChildren<UISlider>();
+        SetValue(value);
+        UIslider = control.GetComponentInChildren<UISlider>(true);
         UIslider.SliderEvent.RemoveAllListeners();
         slider.onValueChanged.RemoveAllListeners();
         sliderText = Traverse.Create(UIslider).Field("sliderTextComponent").GetValue<Text>();
@@ -1400,9 +1966,9 @@ public class modSetting_slider : modSetting
         slider.onValueChanged.AddListener(delegate { value = slider.value; });
     }
 
-    public void setValue(float newValue)
+    public void SetValue(float newValue)
     {
-        if (slider == null)
+        if (!slider)
         {
             if (newValue < minValue)
                 value = minValue;
@@ -1422,49 +1988,61 @@ public class modSetting_slider : modSetting
         }
     }
 
-    public enum sliderType
+    public enum SliderType
     {
-        number,
-        percent
+        Number,
+        Percent,
+        Custom
     }
-    public override void create()
+    public override void Create()
     {
-        setGameObject(Object.Instantiate(ExtraSettingsAPI.sliderPrefab));
+        SetGameObject(Object.Instantiate(ExtraSettingsAPI.sliderPrefab));
     }
-    public override void destroy()
+    public override void Destroy()
     {
-        base.destroy();
+        base.Destroy();
         slider = null;
     }
-    public override void update()
+    public override void Update()
     {
         if (!UIslider.gameObject.activeInHierarchy)
         {
             UIslider.enabled = false;
         }
-        sliderText.text = (valueType == sliderType.percent) ? Math.Round(slider.value * 100, rounding) + "%" : Math.Round(slider.value, rounding).ToString();
+        switch (valueType)
+        {
+            case SliderType.Percent:
+                sliderText.text = Math.Round(slider.value * 100, rounding) + "%";
+                break;
+            case SliderType.Custom:
+                sliderText.text = ExtraSettingsAPI.mods[parent.parent].GetSliderText(this);
+                break;
+            default:
+                sliderText.text = Math.Round(slider.value, rounding).ToString();
+                break;
+        }
     }
 
-    public override JSONObject generateSaveJson()
+    public override JSONObject GenerateSaveJson()
     {
         return new JSONObject(value);
     }
-    public override void loadSettings()
+    public override void LoadSettings()
     {
-        JSONObject saved = parent.getSavedSettings(this);
+        JSONObject saved = parent.GetSavedSettings(this);
         if (saved != null && !saved.IsNull)
-            value = saved.n;
+            value = saved.IsNumber ? saved.n : saved.IsString ? float.TryParse(saved.str,out var v) ? v : defaultValue : saved.IsBool ? saved.b ? 1 : 0 : defaultValue;
         else
             value = defaultValue;
     }
 
-    public override void resetValue()
+    public override void ResetValue()
     {
-        setValue(defaultValue);
+        SetValue(defaultValue);
     }
 }
 
-public class modSetting_keybind : modSetting
+public class ModSetting_Keybind : ModSetting
 {
     public KeybindInterface keybind = null;
     public Keybind defaultValue;
@@ -1475,18 +2053,18 @@ public class modSetting_keybind : modSetting
     {
         get
         {
-            if (keybind == null)
+            if (!keybind)
                 return _v;
             return keybind.Keybind;
         }
         set
         {
             _v = value;
-            if (keybind != null)
+            if (keybind)
                 keybind.Set(value);
         }
     }
-    public modSetting_keybind(JSONObject source, modSettingContainer parent) : base(source, parent)
+    public ModSetting_Keybind(JSONObject source, ModSettingContainer parent) : base(source, parent)
     {
         KeyCode newKey = KeyCode.None;
         if (source.HasField("mainDefault"))
@@ -1495,14 +2073,14 @@ public class modSetting_keybind : modSetting
         if (source.HasField("altDefault"))
             Enum.TryParse(source.GetField("altDefault").str, true, out newKey2);
         defaultValue = new Keybind(parent.IDName + "." + name, newKey, newKey2);
-        if (access != menuType.world)
-            loadSettings();
+        if (access.NotWorldSave())
+            LoadSettings();
         else
             value = new Keybind(defaultValue);
         addKeyBind();
     }
 
-    public void setValue(KeyCode key, bool main = true)
+    public void SetValue(KeyCode key, bool main = true)
     {
         if (main)
             value.MainKey = key;
@@ -1511,9 +2089,9 @@ public class modSetting_keybind : modSetting
         value = value;
     }
 
-    public override void setGameObject(GameObject go)
+    public override void SetGameObject(GameObject go)
     {
-        base.setGameObject(go);
+        base.SetGameObject(go);
         keybind = control.GetComponent<KeybindInterface>();
         Traverse keyTrav = Traverse.Create(keybind);
         keyTrav.Field("idenifier").SetValue(defaultValue.Identifier);
@@ -1523,25 +2101,25 @@ public class modSetting_keybind : modSetting
         KeyConnection alt = keyTrav.Field("altKey").GetValue<KeyConnection>();
         main.button = control.transform.FindChildRecursively("MainKey").GetComponent<Button>();
         alt.button = control.transform.FindChildRecursively("AltKey").GetComponent<Button>();
-        main.text = main.button.GetComponentInChildren<Text>();
-        alt.text = alt.button.GetComponentInChildren<Text>();
+        main.text = main.button.GetComponentInChildren<Text>(true);
+        alt.text = alt.button.GetComponentInChildren<Text>(true);
         keybind.Initialize(ExtraSettingsAPI.keybindColors);
         value = _v;
     }
 
-    public override void create()
+    public override void Create()
     {
-        setGameObject(Object.Instantiate(ExtraSettingsAPI.keybindPrefab));
+        SetGameObject(Object.Instantiate(ExtraSettingsAPI.keybindPrefab));
     }
 
-    public override void destroy()
+    public override void Destroy()
     {
         removeKeyBind();
-        base.destroy();
+        base.Destroy();
         keybind = null;
     }
 
-    public override JSONObject generateSaveJson()
+    public override JSONObject GenerateSaveJson()
     {
         JSONObject store = new JSONObject();
         store.AddField("main", (int)value.MainKey);
@@ -1562,61 +2140,61 @@ public class modSetting_keybind : modSetting
         }
     }
 
-    public override void loadSettings()
+    public override void LoadSettings()
     {
-        JSONObject saved = parent.getSavedSettings(this);
+        JSONObject saved = parent.GetSavedSettings(this);
         if (saved != null && !saved.IsNull)
         {
             KeyCode newKey = defaultValue.MainKey;
             if (saved.HasField("main"))
-                newKey = (KeyCode)(int)saved.GetField("main").n;
+                newKey = saved.GetField("main").IsString ? (Enum.TryParse(saved.GetField("main").str, true, out KeyCode v) ? v : defaultValue.MainKey) : saved.GetField("main").IsNumber ? (KeyCode)(int)saved.GetField("main").n : defaultValue.MainKey;
             KeyCode newKey2 = defaultValue.AltKey;
             if (saved.HasField("alt"))
-                newKey2 = (KeyCode)(int)saved.GetField("alt").n;
+                newKey2 = saved.GetField("alt").IsString ? (Enum.TryParse(saved.GetField("alt").str, true, out KeyCode v) ? v : defaultValue.AltKey) : saved.GetField("alt").IsNumber ? (KeyCode)(int)saved.GetField("alt").n : defaultValue.AltKey;
             value = new Keybind(defaultValue.Identifier, newKey, newKey2);
         }
         else
             value = new Keybind(defaultValue);
     }
 
-    public override void resetValue()
+    public override void ResetValue()
     {
-        setValue(defaultValue.MainKey);
-        setValue(defaultValue.AltKey, false);
+        SetValue(defaultValue.MainKey);
+        SetValue(defaultValue.AltKey, false);
     }
 }
 
-public class modSetting_button : modSetting
+public class ModSetting_Button : ModSetting
 {
     public Button button = null;
-    public modSetting_button(JSONObject source, modSettingContainer parent) : base(source, parent)
+    public ModSetting_Button(JSONObject source, ModSettingContainer parent) : base(source, parent)
     {
     }
 
-    public override void setGameObject(GameObject go)
+    public override void SetGameObject(GameObject go)
     {
-        base.setGameObject(go);
-        button = control.GetComponentInChildren<Button>();
+        base.SetGameObject(go);
+        button = control.GetComponentInChildren<Button>(true);
         Vector2 sizeDif = new Vector2(text.preferredWidth + text.preferredHeight - (button.transform as RectTransform).offsetMax.x, 0);
         (button.transform as RectTransform).offsetMax += sizeDif;
-        button.onClick.AddListener(delegate { ExtraSettingsAPI.mods[parent.parent].ButtonPress(this); });
+        button.onClick.AddListener(() => ExtraSettingsAPI.mods[parent.parent].ButtonPress(this));
     }
 
-    public override void create()
+    public override void Create()
     {
-        setGameObject(Object.Instantiate(ExtraSettingsAPI.buttonPrefab));
+        SetGameObject(Object.Instantiate(ExtraSettingsAPI.buttonPrefab));
     }
 
-    public override void destroy()
+    public override void Destroy()
     {
-        base.destroy();
+        base.Destroy();
         button = null;
     }
 
-    public override void setText(string newText)
+    public override void SetText(string newText)
     {
-        base.setText(newText);
-        if (button != null)
+        base.SetText(newText);
+        if (button)
         {
             Vector2 sizeDif = new Vector2(text.preferredWidth + text.preferredHeight - (button.transform as RectTransform).offsetMax.x, 0);
             (button.transform as RectTransform).offsetMax += sizeDif;
@@ -1625,14 +2203,14 @@ public class modSetting_button : modSetting
     }
 }
 
-public class modSetting_input : modSetting
+public class ModSetting_Input : ModSetting
 {
     public InputField input = null;
     public string defaultValue;
     public string value;
     public int maxLength;
     public InputField.ContentType contentType;
-    public modSetting_input(JSONObject source, modSettingContainer parent) : base(source, parent)
+    public ModSetting_Input(JSONObject source, ModSettingContainer parent) : base(source, parent)
     {
         if (source.HasField("default"))
             defaultValue = source.GetField("default").str;
@@ -1643,103 +2221,106 @@ public class modSetting_input : modSetting
         else
             maxLength = 0;
         if (source.HasField("mode"))
-            Enum.TryParse(source.GetField("mode").str, out contentType);
-        if (access != menuType.world)
-            loadSettings();
+            Enum.TryParse(source.GetField("mode").str, true, out contentType);
+        if (access.NotWorldSave())
+            LoadSettings();
         else
             value = defaultValue;
     }
 
-    public override void setGameObject(GameObject go)
+    public override void SetGameObject(GameObject go)
     {
-        base.setGameObject(go);
-        input = control.GetComponentInChildren<InputField>();
-        if (maxLength > 0)
-            input.onValueChanged.AddListener((t) => { if (t.Length > maxLength) input.text = value; else value = t; });
-        else
-            input.onValueChanged.AddListener((t) => { value = t; });
+        base.SetGameObject(go);
+        input = control.GetComponentInChildren<InputField>(true);
+        input.characterLimit = maxLength > 0 ? maxLength : int.MaxValue;
         input.contentType = contentType;
-        setValue(value);
+        input.onEndEdit.AddListener((t) => { value = t; });
+        SetValue(value);
     }
 
-    public void setValue(string newValue)
+    public void SetValue(string newValue)
     {
-        if (input == null)
-            value = newValue;
-        else
+        if (input)
             input.text = newValue;
+        value = newValue;
     }
 
-    public override void create()
+    public override void Create()
     {
-        setGameObject(Object.Instantiate(ExtraSettingsAPI.inputPrefab));
+        SetGameObject(Object.Instantiate(ExtraSettingsAPI.inputPrefab));
     }
 
-    public override void destroy()
+    public override void Destroy()
     {
-        base.destroy();
+        base.Destroy();
         input = null;
     }
 
-    public override JSONObject generateSaveJson()
+    public override JSONObject GenerateSaveJson()
     {
         return JSONObject.StringObject(value);
     }
-    public override void loadSettings()
+    public override void LoadSettings()
     {
-        JSONObject saved = parent.getSavedSettings(this);
+        JSONObject saved = parent.GetSavedSettings(this);
         if (saved != null && !saved.IsNull)
-            value = saved.str;
+            value = saved.IsNumber ? saved.n.ToString() : saved.IsString ? saved.str : saved.IsBool ? saved.b.ToString() : defaultValue;
         else
             value = defaultValue;
     }
 
-    public override void resetValue()
+    public override void ResetValue()
     {
-        setValue(defaultValue);
+        SetValue(defaultValue);
     }
 }
 
-public class modSetting_text : modSetting
+public class ModSetting_Text : ModSetting
 {
-    public modSetting_text(JSONObject source, modSettingContainer parent) : base(source, parent)
+    public ModSetting_Text(JSONObject source, ModSettingContainer parent) : base(source, parent)
     {
     }
 
-    public override void setGameObject(GameObject go)
+    public override void SetGameObject(GameObject go)
     {
-        base.setGameObject(go);
+        base.SetGameObject(go);
     }
 
-    public override void create()
+    public override void Create()
     {
-        setGameObject(Object.Instantiate(ExtraSettingsAPI.textPrefab));
+        SetGameObject(Object.Instantiate(ExtraSettingsAPI.textPrefab));
     }
 }
 
-public class modSetting_data : modSetting
+public class ModSetting_Data : ModSetting
 {
     Dictionary<string, string> value;
     JSONObject defaultValue;
-    public modSetting_data(JSONObject source, modSettingContainer parent) : base(source, parent)
+    public ModSetting_Data(JSONObject source, ModSettingContainer parent) : base(source, parent)
     {
         if (source == null || source.IsNull || !source.HasField("default"))
-            defaultValue = new JSONObject();
+            defaultValue = new JSONObject(new Dictionary<string,string>());
         else
             defaultValue = source.GetField("default").Copy();
-        if (access != menuType.world)
-            loadSettings();
+        if (access.NotWorldSave())
+            LoadSettings();
         else
-            resetValue();
+            ResetValue();
     }
 
-    public void setValue(string name, string newValue)
+    public void SetValue(string name, string newValue)
     {
-        if (value.ContainsKey(name))
-            value[name] = newValue;
-        else
-            value.Add(name, newValue);
-        if (access != menuType.world)
+        value[name] = newValue;
+        if (access.NotWorldSave())
+            ExtraSettingsAPI.generateSaveJson();
+    }
+
+    public void SetValues(Dictionary<string,string> values)
+    {
+	    value.Clear();
+        foreach (var i in values)
+	    value[i.Key] = i.Value;
+        if (access.NotWorldSave())
             ExtraSettingsAPI.generateSaveJson();
     }
 
@@ -1757,47 +2338,153 @@ public class modSetting_data : modSetting
         return names;
     }
 
-    public override void loadSettings()
+    public override void LoadSettings()
     {
-        JSONObject saved = parent.getSavedSettings(this);
+        JSONObject saved = parent.GetSavedSettings(this);
         if (saved != null && !saved.IsNull)
             value = saved.ToDictionary();
         else
-            resetValue();
+            ResetValue();
     }
-    public override void destroy() { }
-    public override JSONObject generateSaveJson()
+    public override void Destroy() { }
+    public override JSONObject GenerateSaveJson()
     {
         return new JSONObject(value);
     }
-    public override void resetValue()
+    public override void ResetValue()
     {
         value = defaultValue.ToDictionary();
     }
-    public override void create() { }
-    public override void setText(string newText) { }
+    public override void Create() { }
+    public override void SetText(string newText) { }
 }
 
-public class modSettingContainer
+public class ModSetting_MultiButton : ModSetting
+{
+    public Button[] buttons;
+    public string[] names;
+    public string[] defaultNames;
+    public Transform container;
+    public ModSetting_MultiButton(JSONObject source, ModSettingContainer parent) : base(source, parent)
+    {
+        buttons = new Button[0];
+        if (source == null || source.IsNull || !source.HasField("buttons") || !source.GetField("buttons").IsArray)
+            defaultNames = new string[0];
+        else
+            defaultNames = source.GetField("buttons").ToStringArray();
+        SetValue(defaultNames);
+    }
+
+    public override void SetGameObject(GameObject go)
+    {
+        base.SetGameObject(go);
+        container = control.GetComponentInChildren<HorizontalLayoutGroup>(true).transform;
+        SetValue(names);
+    }
+
+    public override void Create()
+    {
+        SetGameObject(Object.Instantiate(ExtraSettingsAPI.multibuttonPrefab));
+    }
+
+    public override void Destroy()
+    {
+        base.Destroy();
+        buttons = new Button[0];
+    }
+
+    public override void ResetValue()
+    {
+        base.ResetValue();
+        SetValue(defaultNames);
+    }
+
+    public override void SetText(string newText) { }
+
+    public void SetValue(string[] newText)
+    {
+        names = newText ?? new string[0];
+        if (container)
+        {
+            var c = Math.Max(buttons.Length, names.Length);
+            for (int i = 0; i < c; i++)
+                if (i >= names.Length)
+                    Object.Destroy(buttons[i]);
+                else {
+                    var button = i < buttons.Length ? buttons[i] : null;
+                    if (!button)
+                    {
+                        button = Object.Instantiate(ExtraSettingsAPI.multibuttonChildPrefab, container);
+                        var j = i;
+                        button.onClick.AddListener(() => ExtraSettingsAPI.mods[parent.parent].ButtonPress(this, j));
+                    }
+                    var t = button.GetComponentInChildren<Text>(true);
+                    t.text = names[i];
+                    var r = button.transform as RectTransform;
+                    r.sizeDelta += new Vector2(t.preferredWidth - t.preferredHeight + r.rect.height - r.rect.width, 0);
+                }
+            buttons = container.GetComponentsInChildren<Button>(true);
+        }
+    }
+    public string[] GetValue()
+    {
+        if (names != null)
+            return names;
+        return null;
+    }
+}
+
+public class ModSetting_Section : ModSetting
+{
+    public bool open = false;
+    public ModSetting_Section(JSONObject source, ModSettingContainer parent) : base(source, parent)
+    {
+    }
+
+    public override void SetGameObject(GameObject go)
+    {
+        base.SetGameObject(go);
+        control.GetComponentInChildren<Toggle>(true).onValueChanged.AddListener(x => {
+            open = x;
+            parent.ToggleSettings();
+            ExtraSettingsAPI.UpdateAllSettingBacks();
+        });
+    }
+
+    public override void Create()
+    {
+        SetGameObject(Object.Instantiate(ExtraSettingsAPI.sectionPrefab));
+    }
+
+    public override void Destroy()
+    {
+        base.Destroy();
+    }
+}
+
+public class ModSettingContainer
 {
     public string ModName { get; }
     public string IDName { get; }
     public Mod parent { get; }
     public JSONObject settingsJson;
-    public List<modSetting> settings = new List<modSetting>();
+    public Dictionary<string, ModSetting> settings = new Dictionary<string, ModSetting>();
+    public List<ModSetting> allSettings = new List<ModSetting>();
     public GameObject title = null;
-    public modSettingContainer(Mod mod, JSONObject settings)
+    public ModSettingContainer(Mod mod, JSONObject settings)
     {
         parent = mod;
         ModName = parent.modlistEntry.jsonmodinfo.name;
-        IDName = parent.GetType().Name;
+        IDName = parent.GetType().FullName;
         settingsJson = settings;
         if (!settingsJson.IsArray)
             throw new FormatException("Mod settings in " + ModName + " are not formatted correctly");
         foreach (JSONObject settingEntry in settingsJson.list)
             try
             {
-                this.settings.Add(modSetting.createSetting(settingEntry, this));
+                var n = ModSetting.CreateSetting(settingEntry, this);
+                this.settings.TryAdd(n.name, n);
+                allSettings.Add(n);
             }
             catch (Exception err)
             {
@@ -1805,37 +2492,37 @@ public class modSettingContainer
             }
     }
 
-    public void create()
+    public void Create()
     {
         title = Object.Instantiate(ExtraSettingsAPI.titlePrefab);
         title.name = IDName + "Title";
         title.transform.SetParent(ExtraSettingsAPI.newOptCon.transform, false);
-        Text text = title.GetComponentInChildren<Text>();
+        Text text = title.GetComponentInChildren<Text>(true);
         text.text = "-------- " + ModName;
         text.rectTransform.offsetMax += new Vector2(text.preferredWidth - text.rectTransform.sizeDelta.x, 0);
-        foreach (modSetting setting in settings)
-            setting.create();
-        toggleSettings(RAPI.GetLocalPlayer() == null);
-        title.GetComponentInChildren<Toggle>().onValueChanged.AddListener(x => {
-            toggleSettings(RAPI.GetLocalPlayer() == null, x);
-            ExtraSettingsAPI.updateAllSettingBacks();
+        foreach (var setting in allSettings)
+            setting.Create();
+        ToggleSettings();
+        title.GetComponentInChildren<Toggle>(true).onValueChanged.AddListener(x => {
+            ToggleSettings(x);
+            ExtraSettingsAPI.UpdateAllSettingBacks();
         });
     }
 
-    public void destroy()
+    public void Destroy()
     {
-        if (title != null)
+        if (title)
         {
             Object.Destroy(title);
             title = null;
         }
-        foreach (modSetting setting in settings)
-            setting.destroy();
+        foreach (var setting in allSettings)
+            setting.Destroy();
     }
 
-    public JSONObject getSavedSettings(modSetting setting)
+    public JSONObject GetSavedSettings(ModSetting setting)
     {
-        JSONObject dataStore = (setting.access == modSetting.menuType.world) ? ExtraSettingsAPI.LocalConfig : ExtraSettingsAPI.Config;
+        JSONObject dataStore = setting.access.NotWorldSave() ? ExtraSettingsAPI.Config : ExtraSettingsAPI.LocalConfig;
         if (dataStore == null || dataStore.IsNull)
             return null;
         JSONObject set = dataStore.GetField("savedSettings");
@@ -1847,34 +2534,38 @@ public class modSettingContainer
         return set.GetField(setting.name);
     }
 
-    public JSONObject generateSaveJson(bool isLocal = false)
+    public JSONObject GenerateSaveJson(bool isLocal = false)
     {
         JSONObject store = new JSONObject();
-        foreach (modSetting setting in settings)
-        {
-            if (setting.access == modSetting.menuType.world != isLocal)
-                continue;
-            JSONObject dat = setting.generateSaveJson();
-            if (dat != null)
-                store.AddField(setting.name, dat);
-        }
+        foreach (var setting in allSettings)
+            if (setting.access.NotWorldSave() != isLocal)
+            {
+                JSONObject dat = setting.GenerateSaveJson();
+                if (dat != null)
+                    store.AddField(setting.name, dat);
+            }
         return store;
     }
 
-    public void toggleSettings(bool isOnMainmenu) => toggleSettings(isOnMainmenu, title.GetComponentInChildren<Toggle>().isOn);
-
-    public void toggleSettings(bool isOnMainmenu, bool on)
+    public void ToggleSettings()
     {
-        foreach (modSetting setting in settings)
-            if (setting.control != null)
-                setting.control.SetActive(on && (isOnMainmenu ? setting.access <= modSetting.menuType.mainmenu : (setting.access != modSetting.menuType.mainmenu)));
-        ExtraSettingsAPI.updateAllSettingBacks();
+        if (title)
+            ToggleSettings(title.GetComponentInChildren<Toggle>(true).isOn);
     }
 
-    public void loadLocal()
+    public void ToggleSettings(bool on)
     {
-        foreach (modSetting setting in settings)
-            if (setting.access == modSetting.menuType.world)
-                setting.loadSettings();
+        var isOnMainmenu = !RAPI.GetLocalPlayer();
+        foreach (var setting in allSettings)
+            if (setting.control)
+                setting.control.SetActive(on && setting.ShouldShow(isOnMainmenu));
+        ExtraSettingsAPI.UpdateAllSettingBacks();
+    }
+
+    public void LoadLocal()
+    {
+        foreach (var setting in allSettings)
+            if (!setting.access.NotWorldSave())
+                setting.LoadSettings();
     }
 }
