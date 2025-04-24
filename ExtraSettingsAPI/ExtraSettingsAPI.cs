@@ -33,26 +33,19 @@ public class ExtraSettingsAPI : Mod
     }
     public static JSONObject Config;
     public static JSONObject LocalConfig;
-    public static Settings settingsController = ComponentManager<Settings>.Value;
-    static Traverse settingsTraverse = Traverse.Create(settingsController);
-    static GameObject OptionMenuContainer = settingsTraverse.Field("optionsCanvas").GetValue<GameObject>().transform.FindChildRecursively("OptionMenuParent").gameObject;
-    static TabGroup tabGroup = OptionMenuContainer.GetComponentInChildren<TabGroup>();
-    static Traverse<TabButton[]> tabButtons = Traverse.Create(tabGroup).Field<TabButton[]>("tabButtons");
-    static GameObject newSet;
-    static GameObject newTab;
-    static TabButton newTabBut;
-    public static GameObject newOptCon;
+    public static Settings settingsController => ComponentManager<Settings>.Value;
+    //static Traverse settingsTraverse = Traverse.Create(settingsController);
+    //static GameObject OptionMenuContainer = settingsTraverse.Field("optionsCanvas").GetValue<GameObject>().transform.FindChildRecursively("OptionMenuParent").gameObject;
+    //static TabGroup tabGroup = OptionMenuContainer.GetComponentInChildren<TabGroup>();
+    static GameObject newTabBody;
+    static GameObject newTabButtonObj;
+    static TabButton newTabButton;
+    public static RectTransform newTabContent;
     static string newName = "Mods";
-    static string sourceName = "Graphics";
-    static RectTransform backTransform = OptionMenuContainer.transform.FindChildRecursively("BrownBackground").transform as RectTransform;
-    static RectTransform divTransform = OptionMenuContainer.transform.FindChildRecursively("Divider").transform as RectTransform;
-    static RectTransform contentTransform = OptionMenuContainer.transform.FindChildRecursively("TabContent").transform as RectTransform;
-    static RectTransform closeTransform = OptionMenuContainer.transform.FindChildRecursively("CloseButton").transform as RectTransform;
-    static RectTransform tabsTransform = OptionMenuContainer.transform.FindChildRecursively("TabContainer").transform as RectTransform;
-    public static Sprite dividerSprite = divTransform.GetComponent<Image>().sprite;
+    public static Sprite dividerSprite = Resources.FindObjectsOfTypeAll<Sprite>().FirstOrDefault(x => x.name == "Divider");
     public static Dictionary<Mod, ModSettingContainer> modSettings;
     public static Dictionary<Mod, EventCaller> mods;
-    public static bool init;
+    public static bool needsToCreateSettings;
     public Harmony harmony;
     public static RectTransform prefabParent;
     public static GameObject sliderPrefab;
@@ -71,7 +64,7 @@ public class ExtraSettingsAPI : Mod
     public static Traverse self;
     public void Awake()
     {
-        init = true;
+        needsToCreateSettings = true;
         prefabParent = new GameObject("PrefabParent").AddComponent<RectTransform>();
         prefabParent.gameObject.SetActive(false);
         DontDestroyOnLoad(prefabParent.gameObject);
@@ -98,12 +91,6 @@ public class ExtraSettingsAPI : Mod
             loadLocal(true);
         self = Traverse.Create(this);
         //loadAllSettings();
-        keybindColors = new ColorBlock();
-        keybindColors.disabledColor = new Color(0.772f, 0.233f, 0.170f, 0.502f);
-        keybindColors.highlightedColor = new Color(0.956f, 0.893f, 0.759f, 1.000f);
-        keybindColors.normalColor = new Color(0.733f, 0.631f, 0.416f, 1.000f);
-        keybindColors.pressedColor = new Color(0.733f, 0.631f, 0.416f, 1.000f);
-        keybindColors.selectedColor = new Color(0.956f, 0.893f, 0.759f, 1.000f);
         (harmony = new Harmony("com.aidanamite.ExtraSettingsAPI")).PatchAll();
         Log("Mod has been loaded!");
     }
@@ -129,7 +116,7 @@ public class ExtraSettingsAPI : Mod
             if (Patch_EnterExitKeybind.lastEntered.Item2)
                 Patch_EnterExitKeybind.lastEntered.Item1.Keybind.MainKey = KeyCode.None;
             else
-                    Patch_EnterExitKeybind.lastEntered.Item1.Keybind.AltKey = KeyCode.None;
+                Patch_EnterExitKeybind.lastEntered.Item1.Keybind.AltKey = KeyCode.None;
             Patch_EnterExitKeybind.lastEntered.Item1.Set(Patch_EnterExitKeybind.lastEntered.Item1.Keybind);
         }
     }
@@ -137,7 +124,7 @@ public class ExtraSettingsAPI : Mod
     public void OnModUnload()
     {
         harmony?.UnpatchAll(harmony.Id);
-        if (!init)
+        if (!needsToCreateSettings)
             removeNewSettingsMenu();
         if (prefabParent)
             Destroy(prefabParent.gameObject);
@@ -242,46 +229,30 @@ public class ExtraSettingsAPI : Mod
 
     public static void insertNewSettingsMenu()
     {
-        OptionMenuContainer = settingsTraverse.Field("optionsCanvas").GetValue<GameObject>().transform.FindChildRecursively("OptionMenuParent").gameObject;
-        tabGroup = OptionMenuContainer.GetComponentInChildren<TabGroup>();
-        tabButtons = Traverse.Create(tabGroup).Field<TabButton[]>("tabButtons");
-        backTransform = OptionMenuContainer.transform.FindChildRecursively("BrownBackground").transform as RectTransform;
-        divTransform = OptionMenuContainer.transform.FindChildRecursively("Divider").transform as RectTransform;
-        contentTransform = OptionMenuContainer.transform.FindChildRecursively("TabContent").transform as RectTransform;
-        closeTransform = OptionMenuContainer.transform.FindChildRecursively("CloseButton").transform as RectTransform;
-        tabsTransform = OptionMenuContainer.transform.FindChildRecursively("TabContainer").transform as RectTransform;
-        Vector2 newSize = new Vector2(tabsTransform.rect.width * tabButtons.Value.Length.StepUp(), 0);
-        backTransform.offsetMax += newSize;
-        divTransform.offsetMax += newSize;
-        contentTransform.offsetMax += newSize;
-        closeTransform.offsetMin += newSize;
-        closeTransform.offsetMax += newSize;
-        tabsTransform.offsetMax += newSize;
-        int newIndex = tabButtons.Value.Length;
-        GameObject settingsSet = OptionMenuContainer.transform.FindChildRecursively(sourceName).gameObject;
-        newSet = Instantiate(settingsSet, settingsSet.transform.parent, false);
-        GameObject settingsTab = OptionMenuContainer.transform.FindChildRecursively(sourceName + "Tab").gameObject;
-        newTab = Instantiate(settingsTab, settingsTab.transform.parent, false);
-        newSet.name = newName;
-        newTab.name = newName + "Tab";
-        newSet.SetActive(false);
-        newTabBut = newTab.GetComponent<TabButton>();
-        DestroyLocalizations(newTabBut.gameObject);
-        Text newTabTex = newTabBut.GetComponentInChildren<Text>(true);
-        newTabBut.tabIndex = newIndex;
+        var MenuPanel = Traverse.Create(settingsController).Field("panel").GetValue<RectTransform>();
+        var TabGroup = MenuPanel.GetComponentInChildren<TabGroup>();
+        MenuPanel.offsetMax += new Vector2((TabGroup.tabButtons[1].transform.localPosition - TabGroup.tabButtons[0].transform.localPosition).x, 0);
+        int newIndex = TabGroup.tabButtons.Length;
+        var settingsBody = ComponentManager<Settings>.Value.graphicsBox.gameObject;
+        var settingsTab = TabGroup.tabButtons.First(x => x.Tab == settingsBody);
+        newTabBody = Instantiate(settingsBody, settingsBody.transform.parent, false);
+        newTabBody.name = newName;
+        newTabBody.SetActive(false);
+        newTabButtonObj = (newTabButton = Instantiate(settingsTab, settingsTab.transform.parent, false)).gameObject;
+        newTabButtonObj.name = newName + "Tab";
+        DestroyLocalizations(newTabButtonObj);
+        Text newTabTex = newTabButton.GetComponentInChildren<Text>(true);
+        newTabButton.tabIndex = newIndex;
         newTabTex.text = newName;
-        newTabBut.name = newTab.name;
-        newTabBut.OnPointerExit(true);
-        Traverse tabTraverse = Traverse.Create(newTabBut);
-        tabTraverse.Field("tabButton").SetValue(newTabBut.GetComponentInChildren<Button>(true));
-        tabTraverse.Field("tab").SetValue(newSet);
-        var buttons = tabButtons.Value;
-        Add(ref buttons, newTabBut);
-        tabButtons.Value = buttons;
-        (newTab.transform as RectTransform).pivot = new Vector2(0f, 1f);
-        DestroyImmediate(newSet.GetComponent<GraphicsSettingsBox>());
-        newOptCon = newSet.transform.FindChildRecursively("Content").gameObject;
-        foreach (Transform transform in newOptCon.transform)
+        newTabButton.OnPointerExit(true);
+        Traverse tabTraverse = Traverse.Create(newTabButton);
+        tabTraverse.Field("tabButton").SetValue(newTabButton.GetComponentInChildren<Button>(true));
+        tabTraverse.Field("tab").SetValue(newTabBody);
+        Add(ref TabGroup.tabButtons, newTabButton);
+        //(newTabButtonObj.transform as RectTransform).pivot = new Vector2(0f, 1f);
+        DestroyImmediate(newTabBody.GetComponent<GraphicsSettingsBox>());
+        newTabContent = newTabBody.GetComponentInChildren<ScrollRect>().content;
+        foreach (Transform transform in newTabContent)
         {
             if (!comboboxPrefab && transform.gameObject.GetComponentInChildren<Dropdown>(true))
             {
@@ -309,8 +280,8 @@ public class ExtraSettingsAPI : Mod
                 InputField tmp = inputF.AddComponent<InputField>();
                 tmp.textComponent = inputF.transform.Find("Label").GetComponent<Text>();
                 tmp.textComponent.rectTransform.offsetMax = -tmp.textComponent.rectTransform.offsetMin;
-                Destroy(inputF.transform.Find("Arrow").gameObject);
-                Destroy(inputF.transform.Find("Template").gameObject);
+                DestroyImmediate(inputF.transform.Find("Arrow").gameObject);
+                DestroyImmediate(inputF.transform.Find("Template").gameObject);
             }
             if (!sliderPrefab && transform.gameObject.GetComponentInChildren<UISlider>(true))
             {
@@ -338,7 +309,7 @@ public class ExtraSettingsAPI : Mod
                 titlePrefab = Instantiate(transform.gameObject, prefabParent, false);
                 titlePrefab.name = "Title";
                 Toggle checkbox3 = titlePrefab.GetComponentInChildren<Toggle>(true);
-                Destroy(checkbox3.graphic.gameObject);
+                DestroyImmediate(checkbox3.graphic.gameObject);
                 //Destroy(checkbox3.gameObject);
                 checkbox3.onValueChanged = new Toggle.ToggleEvent();
                 checkbox3.isOn = false;
@@ -369,17 +340,18 @@ public class ExtraSettingsAPI : Mod
             }
             Destroy(transform.gameObject);
         }
-        foreach (Transform transform in OptionMenuContainer.transform.FindChildRecursively("Controls").gameObject.transform.FindChildRecursively("Content").gameObject.transform)
+        keybindColors = Traverse.Create(ComponentManager<Settings>.Value.controls).Field("colorblock").GetValue<ColorBlock>();
+        foreach (Transform transform in ComponentManager<Settings>.Value.controls.GetComponentInChildren<ScrollRect>().content)
         {
             if (!keybindPrefab && transform.GetComponentInChildren<KeybindInterface>(true))
             {
-                GameObject copiedObj = transform.FindChildRecursively("Sprint").gameObject;
+                GameObject copiedObj = transform.GetComponentInChildren<KeybindInterface>(true).gameObject;
                 keybindPrefab = Instantiate(copiedObj, prefabParent, false);
                 keybindPrefab.name = "Keybind Setting";
                 keybindPrefab.GetComponentInChildren<Text>(true).text = "Option Name";
                 DestroyLocalizations(keybindPrefab);
             }
-            if (!buttonPrefab && transform.gameObject.GetComponentInChildren<Button>(true))
+            if (!buttonPrefab && transform.GetComponentInChildren<Button>(true))
             {
                 buttonPrefab = Instantiate(transform.gameObject, prefabParent, false);
                 buttonPrefab.name = "Button Setting";
@@ -422,35 +394,40 @@ public class ExtraSettingsAPI : Mod
             }
         }
 
-        //ScrollRect scrollRect = newSet.GetComponentInChildren<ScrollRect>(true);
-        Scrollbar scrollbar = newSet.GetComponentInChildren<Scrollbar>(true);
-        //scrollRect.verticalScrollbar = scrollbar;
+        var scrollRect = newTabBody.GetComponentInChildren<ScrollRect>();
+        var scrollbar = newTabBody.GetComponentInChildren<Scrollbar>();
+        scrollRect.verticalScrollbar = scrollbar;
         scrollbar.value = 1;
-        VerticalLayoutGroup verticalLayoutGroup = newSet.GetComponentInChildren<VerticalLayoutGroup>(true); // This will fetch null if copied tab is "General"
-        ContentSizeFitter contentSizeFitter = verticalLayoutGroup.gameObject.AddComponent<ContentSizeFitter>();
+        var verticalLayoutGroup = scrollRect.content.GetOrAddComponent<VerticalLayoutGroup>();
+        var contentSizeFitter = verticalLayoutGroup.gameObject.AddComponent<ContentSizeFitter>();
         contentSizeFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
         contentSizeFitter.verticalFit = ContentSizeFitter.FitMode.MinSize;
-        init = false;
+        needsToCreateSettings = false;
     }
 
+
+    public static void MaybeReselectModTab()
+    {
+        if (scrollPos != null)
+            newTabBody.GetComponentInChildren<ScrollRect>().content.anchoredPosition = scrollPos.Value;
+        if (!modsTabWasSelected)
+            return;
+        newTabButton.OnPointerClick();
+    }
+    static bool modsTabWasSelected = false;
+    static Vector2? scrollPos;
     public static void removeNewSettingsMenu()
     {
-        init = true;
-        if (tabGroup.SelectedTabButton == newTabBut)
-            tabGroup.SelectTab(0);
-        var buttons = tabButtons.Value;
-        Vector2 newSize = new Vector2(tabsTransform.rect.width * buttons.Length.StepDown(), 0f);
-        backTransform.offsetMax -= newSize;
-        divTransform.offsetMax -= newSize;
-        contentTransform.offsetMax -= newSize;
-        closeTransform.offsetMin -= newSize;
-        closeTransform.offsetMax -= newSize;
-        tabsTransform.offsetMax -= newSize;
-        Remove(ref buttons, newTabBut);
-        tabButtons.Value = buttons;
-        Destroy(newTabBut);
-        Destroy(newSet);
-        Destroy(newTab);
+        needsToCreateSettings = true;
+        var MenuPanel = Traverse.Create(settingsController).Field("panel").GetValue<RectTransform>();
+        var TabGroup = MenuPanel.GetComponentInChildren<TabGroup>();
+        scrollPos = newTabBody.GetComponentInChildren<ScrollRect>().content.anchoredPosition;
+        if (modsTabWasSelected = (TabGroup.SelectedTabButton == newTabButton))
+            TabGroup.SelectTab(0);
+        MenuPanel.offsetMax -= new Vector2((TabGroup.tabButtons[1].transform.localPosition - TabGroup.tabButtons[0].transform.localPosition).x, 0f);
+        Remove(ref TabGroup.tabButtons, newTabButton);
+        Destroy(newTabBody);
+        Destroy(newTabButtonObj);
     }
 
     public static Mod GetMod(Type type)
@@ -531,7 +508,7 @@ public class ExtraSettingsAPI : Mod
             modSettings.Add(mod, newSettings);
             mods.Add(mod, caller);
             caller.Call(EventCaller.EventTypes.Load);
-            if (!init)
+            if (!needsToCreateSettings)
                 caller.Call(EventCaller.EventTypes.Open);
         }
         catch (Exception err)

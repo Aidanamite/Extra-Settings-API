@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using System.Reflection;
 using System.Globalization;
 using Debug = UnityEngine.Debug;
+using Object = UnityEngine.Object;
 
 static public class ExtentionMethods
 {
@@ -122,4 +123,9 @@ static public class ExtentionMethods
         }
         return s.ToString();
     }
+
+    public static T GetOrAddComponent<T>(this GameObject obj) where T : Component => obj.GetComponent<T>() ?? obj.AddComponent<T>();
+    public static T GetOrAddComponent<T>(this Component obj) where T : Component => obj.GetComponent<T>() ?? obj.gameObject.AddComponent<T>();
+    public static Object GetOrAddComponent(this GameObject obj, Type component) => obj.GetComponent(component) ?? obj.AddComponent(component);
+    public static Object GetOrAddComponent(this Component obj, Type component) => obj.GetComponent(component) ?? obj.gameObject.AddComponent(component);
 }

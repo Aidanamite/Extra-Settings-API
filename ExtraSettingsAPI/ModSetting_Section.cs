@@ -12,6 +12,7 @@ public class ModSetting_Section : ModSetting
     public override void SetGameObject(GameObject go)
     {
         base.SetGameObject(go);
+        control.GetComponentInChildren<Toggle>(true).isOn = open;
         control.GetComponentInChildren<Toggle>(true).onValueChanged.AddListener(x => {
             open = x;
             parent.ToggleSettings();

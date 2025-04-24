@@ -9,18 +9,19 @@ using System.Reflection.Emit;
 [HarmonyPatch(typeof(Settings), "Open")]
 static class Patch_SettingsOpen
 {
-    static void Postfix()
+    static void Postfix(Settings __instance)
     {
         ExtraSettingsAPI.insertNewSettingsMenu();
         foreach (EventCaller caller in ExtraSettingsAPI.mods.Values)
             caller.Call(EventCaller.EventTypes.Open);
+        ExtraSettingsAPI.MaybeReselectModTab();
     }
 }
 
 [HarmonyPatch(typeof(Settings), "Close")]
 static class Patch_SettingsClose
 {
-    static void Prefix(ref Settings __instance, ref bool __state) => __state = Traverse.Create(__instance).Field("optionsCanvas").GetValue<GameObject>().activeInHierarchy;
+    static void Prefix(Settings __instance, ref bool __state) => __state = Traverse.Create(__instance).Field("optionsCanvas").GetValue<GameObject>().activeInHierarchy;
     static void Postfix(ref bool __state)
     {
         if (__state)
@@ -28,7 +29,7 @@ static class Patch_SettingsClose
             ExtraSettingsAPI.generateSaveJson();
             foreach (EventCaller caller in ExtraSettingsAPI.mods.Values)
                 caller.Call(EventCaller.EventTypes.Close);
-            if (!ExtraSettingsAPI.init)
+            if (!ExtraSettingsAPI.needsToCreateSettings)
                 ExtraSettingsAPI.removeNewSettingsMenu();
         }
     }
@@ -37,7 +38,7 @@ static class Patch_SettingsClose
 [HarmonyPatch(typeof(UISlider), "Update")]
 static class Patch_SliderUpdate
 {
-    static bool Prefix(ref UISlider __instance)
+    static bool Prefix(UISlider __instance)
     {
         if (__instance.name.StartsWith("ESAPI_"))
             foreach (ModSettingContainer container in ExtraSettingsAPI.modSettings.Values)

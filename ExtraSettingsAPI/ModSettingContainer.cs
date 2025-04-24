@@ -14,6 +14,7 @@ public class ModSettingContainer
     public Dictionary<string, ModSetting> settings = new Dictionary<string, ModSetting>();
     public List<ModSetting> allSettings = new List<ModSetting>();
     public GameObject title = null;
+    public bool open = false;
     public ModSettingContainer(Mod mod, JSONObject settings)
     {
         parent = mod;
@@ -39,17 +40,15 @@ public class ModSettingContainer
     {
         title = Object.Instantiate(ExtraSettingsAPI.titlePrefab);
         title.name = IDName + "Title";
-        title.transform.SetParent(ExtraSettingsAPI.newOptCon.transform, false);
+        title.transform.SetParent(ExtraSettingsAPI.newTabContent.transform, false);
         Text text = title.GetComponentInChildren<Text>(true);
         text.text = "-------- " + ModName;
         text.rectTransform.offsetMax += new Vector2(text.preferredWidth - text.rectTransform.sizeDelta.x, 0);
         foreach (var setting in allSettings)
             setting.Create();
+        title.GetComponentInChildren<Toggle>(true).isOn = open;
         ToggleSettings();
-        title.GetComponentInChildren<Toggle>(true).onValueChanged.AddListener(x => {
-            ToggleSettings(x);
-            ExtraSettingsAPI.UpdateAllSettingBacks();
-        });
+        title.GetComponentInChildren<Toggle>(true).onValueChanged.AddListener(ToggleSettings);
     }
 
     public void Destroy()
@@ -98,6 +97,7 @@ public class ModSettingContainer
 
     public void ToggleSettings(bool on)
     {
+        open = on;
         var isOnMainmenu = !RAPI.GetLocalPlayer();
         foreach (var setting in allSettings)
             if (setting.control)

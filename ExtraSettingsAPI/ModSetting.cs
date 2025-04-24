@@ -99,7 +99,7 @@ public abstract class ModSetting
     {
         control = go;
         control.name = parent.ModName + "." + name;
-        control.transform.SetParent(ExtraSettingsAPI.newOptCon.transform, false);
+        control.transform.SetParent(ExtraSettingsAPI.newTabContent.transform, false);
         text = control.GetComponentInChildren<Text>(true);
         if (text)
         {

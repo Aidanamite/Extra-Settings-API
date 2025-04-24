@@ -11,6 +11,9 @@ public class ToggleImage : MonoBehaviour
     void Awake()
     {
         obj = GetComponent<Toggle>();
+    }
+    void Start()
+    {
         last = !obj.isOn;
     }
     void Update()

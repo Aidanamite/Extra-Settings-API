@@ -116,7 +116,7 @@ public class ModSetting_Slider : ModSetting
         switch (valueType)
         {
             case SliderType.Percent:
-                return roundValue + "%";
+                return roundValue * 100 + "%";
             case SliderType.Custom:
                 return ExtraSettingsAPI.mods[parent.parent].GetSliderText(this);
             default:
