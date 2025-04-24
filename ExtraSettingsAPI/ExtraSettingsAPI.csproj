@@ -37,7 +37,23 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="EventCaller.cs" />
+    <Compile Include="ExtentionMethods.cs" />
     <Compile Include="ExtraSettingsAPI.cs" />
+    <Compile Include="ModSetting.cs" />
+    <Compile Include="ModSettingContainer.cs" />
+    <Compile Include="ModSetting_Button.cs" />
+    <Compile Include="ModSetting_Checkbox.cs" />
+    <Compile Include="ModSetting_Combobox.cs" />
+    <Compile Include="ModSetting_Data.cs" />
+    <Compile Include="ModSetting_Input.cs" />
+    <Compile Include="ModSetting_Keybind.cs" />
+    <Compile Include="ModSetting_MultiButton.cs" />
+    <Compile Include="ModSetting_Section.cs" />
+    <Compile Include="ModSetting_Slider.cs" />
+    <Compile Include="ModSetting_Text.cs" />
+    <Compile Include="Patches.cs" />
+    <Compile Include="SmallClasses.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Properties\" />
