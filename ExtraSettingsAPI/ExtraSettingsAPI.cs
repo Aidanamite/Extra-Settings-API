@@ -345,7 +345,7 @@ public class ExtraSettingsAPI : Mod
         {
             if (!keybindPrefab && transform.GetComponentInChildren<KeybindInterface>(true))
             {
-                GameObject copiedObj = transform.GetComponentInChildren<KeybindInterface>(true).gameObject;
+                GameObject copiedObj = transform.Find("Sprint").gameObject;
                 keybindPrefab = Instantiate(copiedObj, prefabParent, false);
                 keybindPrefab.name = "Keybind Setting";
                 keybindPrefab.GetComponentInChildren<Text>(true).text = "Option Name";
