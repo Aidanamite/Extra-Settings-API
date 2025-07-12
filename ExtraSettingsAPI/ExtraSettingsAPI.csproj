@@ -12,7 +12,7 @@
     <ProjectGuid>{41D2BDD7-E52C-4470-AC81-5F4B496CC559}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>ExtraSettingsAPI</RootNamespace>
+    <RootNamespace>_ExtraSettingsAPI</RootNamespace>
     <AssemblyName>ExtraSettingsAPI</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
@@ -27,6 +27,7 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -50,6 +51,7 @@
     <Compile Include="ModSetting_Keybind.cs" />
     <Compile Include="ModSetting_MultiButton.cs" />
     <Compile Include="ModSetting_Section.cs" />
+    <Compile Include="ModSetting_Seperator.cs" />
     <Compile Include="ModSetting_Slider.cs" />
     <Compile Include="ModSetting_Text.cs" />
     <Compile Include="Patches.cs" />
@@ -439,6 +441,24 @@
   <ItemGroup>
     <None Include="down.png" />
     <None Include="left.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MemberRef\MemberRef.csproj">
+      <Project>{83f890a7-ac65-431d-9a0e-61349a06a0fd}</Project>
+      <Name>MemberRef</Name>
+      <Private>False</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\PrivateAccess\PrivateAccess.csproj">
+      <Project>{c74f6ae5-2ef3-4e26-ade2-d1940d2525c0}</Project>
+      <Name>PrivateAccess</Name>
+      <Private>False</Private>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="banner.jpg" />
+    <Content Include="icon.png" />
+    <Content Include="reset.png" />
+    <Content Include="revert.png" />
   </ItemGroup>
   <PropertyGroup>
     <PreBuildEvent>

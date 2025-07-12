@@ -1,154 +1,194 @@
 ﻿using HarmonyLib;
+using Newtonsoft.Json.Linq;
+using PrivateAccess;
 using System;
 using UnityEngine;
 using UnityEngine.UI;
+using static UnityEngine.GraphicsBuffer;
 using Object = UnityEngine.Object;
 
-public class ModSetting_Slider : ModSetting
+namespace _ExtraSettingsAPI
 {
-    public Slider slider = null;
-    public UISlider UIslider = null;
-    public Text sliderText = null;
-    public float defaultValue;
-    public SliderType valueType;
-    public float minValue;
-    public float maxValue;
-    public int rounding;
-    public float value;
-    public float roundValue
+    public class ModSetting_Slider : ModSetting
     {
-        get
+        public Slider slider = null;
+        public UISlider UIslider = null;
+        public Text sliderText = null;
+        public SliderType valueType = SliderType.Number;
+        public float minValue = 0;
+        public float maxValue = 100;
+        public int rounding = 0;
+        public Value<float> value;
+        public bool roundMember;
+        public float roundValue
         {
-            return (float)Math.Round(value, rounding + (int)valueType * 2);
+            get
+            {
+                return DoRound(value.current);
+            }
         }
-    }
-    public ModSetting_Slider(JSONObject source, ModSettingContainer parent) : base(source, parent)
-    {
-        if (source.HasField("default"))
-            defaultValue = source.GetField("default").n;
-        else
-            defaultValue = 0;
-        valueType = SliderType.Number;
-        minValue = 0;
-        maxValue = 100;
-        rounding = 0;
-        if (source.HasField("range"))
+        float DoRound(float value) => (float)Math.Round(value, rounding + (valueType == SliderType.Percent ? 2 : 0));
+        public ModSetting_Slider(JObject source, ModSettingContainer parent) : base(source, parent)
         {
-            JSONObject range = source.GetField("range");
-            if (range.HasField("type"))
-                if (Enum.TryParse(range.GetField("type").str, true, out valueType))
-                    maxValue = 1;
-                else
-                    throw new InvalidCastException("Failed to parse slider type for " + name + " in " + parent.ModName);
-            if (range.HasField("min"))
-                minValue = range.GetField("min").n;
-            if (range.HasField("max"))
-                maxValue = range.GetField("max").n;
-            if (range.HasField("decimals"))
-                rounding = (int)range.GetField("decimals").n;
-        }
-        if (access.NotWorldSave())
+            if (source.TryGetValue<JObject>("range", out var range))
+            {
+                if (range.TryGetValue<JValue>("type", out var typeField, JTokenType.String))
+                    if (Enum.TryParse(typeField.Value?.EnsureType<string>(), true, out valueType))
+                        maxValue = 1;
+                    else
+                        throw new InvalidCastException("Failed to parse slider type for " + name + " in " + parent.ModName);
+                if (range.TryGetValue<JValue>("min", out var field) && field.Value.TryConvert(out float v))
+                    minValue = v;
+                if (range.TryGetValue("max", out field) && field.Value.TryConvert(out v))
+                    maxValue = v;
+                if (range.TryGetValue("decimals", out field) && field.Value.TryConvert(out int v2))
+                    rounding = v2;
+            }
+            TrySetupMember(source);
+            if (target != null && source.TryGetValue<JValue>("memberRound", out var roundField, JTokenType.Boolean))
+                roundMember = roundField.Value.EnsureType<bool>();
+            var defaultValue = 0f;
+            if (source.TryGetValue<JValue>("default", out var defaultField) && defaultField.Value.TryConvert(out float dv))
+                defaultValue = dv;
+            else if (TryGetMemberValue(out var mem) && mem.TryConvert(out float memValue))
+                defaultValue = memValue;
+            if (defaultValue < minValue)
+                defaultValue = minValue;
+            else if (defaultValue > maxValue)
+                defaultValue = maxValue;
+            value = NewValue(defaultValue);
             LoadSettings();
-        else
-            value = defaultValue;
-    }
-
-    override public void SetGameObject(GameObject go)
-    {
-        base.SetGameObject(go);
-        slider = control.GetComponentInChildren<Slider>(true);
-        slider.minValue = minValue;
-        slider.maxValue = maxValue;
-        SetValue(value);
-        UIslider = control.GetComponentInChildren<UISlider>(true);
-        UIslider.SliderEvent.RemoveAllListeners();
-        slider.onValueChanged.RemoveAllListeners();
-        sliderText = Traverse.Create(UIslider).Field("sliderTextComponent").GetValue<Text>();
-        UIslider.name = "ESAPI_" + control.name + "_UISlider";
-        slider.onValueChanged.AddListener(delegate { value = slider.value; });
-    }
-
-    public void SetValue(float newValue)
-    {
-        if (!slider)
-        {
-            if (newValue < minValue)
-                value = minValue;
-            else if (newValue > maxValue)
-                value = maxValue;
-            else
-                value = newValue;
         }
-        else
+
+        protected override bool IsMemberTypeValid(Type type) => type.IsNumber();
+
+        public override string GetTooltip() => noSave ? base.GetTooltip() : JoinParagraphs(base.GetTooltip(), $"Default Value: {GetText(value.Default)}{(ExtraSettingsAPI.IsInWorld && save.IsSplit() ? $"\nGlobal Value: {value[false]}" : "")}{(ExtraSettingsAPI.IsInWorld && save.IsSplit() ? $"\nGlobal Value: {GetText(value[false])}" : "")}");
+
+        protected override bool DoRealtimeMemberCheck()
         {
-            if (newValue < minValue)
-                slider.value = minValue;
-            else if (newValue > maxValue)
-                slider.value = maxValue;
-            else
-                slider.value = newValue;
-        }
-    }
-
-    public enum SliderType
-    {
-        Number,
-        Percent,
-        Custom
-    }
-    public override void Create()
-    {
-        SetGameObject(Object.Instantiate(ExtraSettingsAPI.sliderPrefab));
-    }
-    public override void Destroy()
-    {
-        base.Destroy();
-        slider = null;
-    }
-    public override void Update()
-    {
-        if (!UIslider.gameObject.activeInHierarchy)
-            UIslider.enabled = false;
-        sliderText.text = GetText();
-    }
-    public string GetText()
-    {
-        switch (valueType)
-        {
-            case SliderType.Percent:
-                return roundValue * 100 + "%";
-            case SliderType.Custom:
-                return ExtraSettingsAPI.mods[parent.parent].GetSliderText(this);
-            default:
-                return roundValue.ToString();
-        }
-    }
-
-    public override JSONObject GenerateSaveJson()
-    {
-        return new JSONObject(value);
-    }
-    public override void LoadSettings()
-    {
-        JSONObject saved = parent.GetSavedSettings(this);
-        if (saved != null && !saved.IsNull)
-            value = saved.IsNumber ? saved.n : saved.IsString ? float.TryParse(saved.str,out var v) ? v : defaultValue : saved.IsBool ? saved.b ? 1 : 0 : defaultValue;
-        else
-            value = defaultValue;
-    }
-
-    public override void ResetValue()
-    {
-        SetValue(defaultValue);
-    }
-
-    public override string CurrentValue() => GetText();
-    public override bool TrySetValue(string str)
-    {
-        if (!float.TryParse(str, out var v))
+            if (!TryGetMemberValue(out var mem))
+                return false;
+            object curr = roundMember ? roundValue : value.current;
+            if (TryEnsureValueForMember(ref curr, out _) && !Equals(mem, curr) && mem.TryConvert(out float memValue))
+            {
+                SetValue(memValue, ExtraSettingsAPI.IsInWorld, SetFlags.All ^ SetFlags.Member);
+                return true;
+            }
             return false;
-        SetValue(v);
-        return true;
+        }
+
+        override public void SetGameObject(GameObject go)
+        {
+            base.SetGameObject(go);
+            slider = control.GetComponentInChildren<Slider>(true);
+            slider.minValue = minValue;
+            slider.maxValue = maxValue;
+            slider.value = value.current;
+            UIslider = control.GetComponentInChildren<UISlider>(true);
+            UIslider.gameObject.AddComponent<Component>().owner = this;
+            UIslider.SliderEvent.RemoveAllListeners();
+            slider.onValueChanged.RemoveAllListeners();
+            sliderText = UIslider.TextComponent();
+            UIslider.name = "ESAPI_" + control.name + "_UISlider";
+            UIslider.enabled = false;
+            slider.onValueChanged.AddListener(x => SetValue(x, ExtraSettingsAPI.IsInWorld, SetFlags.All ^ SetFlags.Control));
+        }
+
+        public void SetValue(float newValue, bool local, SetFlags flags = SetFlags.All)
+        {
+            flags = FilterFlags(flags, local);
+            if (newValue < minValue)
+                newValue = minValue;
+            else if (newValue > maxValue)
+                newValue = maxValue;
+            if (flags.HasFlag(SetFlags.Storage))
+                value[local] = newValue;
+            if (flags.HasFlag(SetFlags.Control) && slider)
+                slider.SetValueWithoutNotify(newValue);
+            if (flags.HasFlag(SetFlags.Member))
+                SetMemberValue(roundMember ? DoRound(newValue) : newValue);
+        }
+
+        public enum SliderType
+        {
+            Number,
+            Percent,
+            Custom
+        }
+        public override void Create()
+        {
+            SetGameObject(Object.Instantiate(ExtraSettingsAPI.sliderPrefab));
+        }
+        public override void Destroy()
+        {
+            base.Destroy();
+            slider = null;
+            last = float.NaN;
+        }
+        float last = float.NaN;
+        public override void Update()
+        {
+            if (UIslider.Value != last)
+            {
+                last = UIslider.Value;
+                sliderText.text = GetText();
+            }
+        }
+        public string GetText() => GetText(value.current);
+        public string GetText(float value)
+        {
+            switch (valueType)
+            {
+                case SliderType.Percent:
+                    return value.ToString("P" + rounding);
+                case SliderType.Custom:
+                    return ExtraSettingsAPI.mods[parent.parent].GetSliderText(this,value);
+                default:
+                    return value.ToString("N" + rounding);
+            }
+        }
+
+        protected override bool ShouldTryGenerateSave(bool local) => value.ShouldSave(local);
+        public override JToken GenerateSaveJson(bool local) => value[local];
+
+        public override void LoadSettings(bool local)
+        {
+            JToken saved = parent.GetSavedSettings(this, local);
+            if (saved is JValue val && val.TryConvert(out float v))
+                SetValue(v, local);
+            else
+                ResetValue(local);
+        }
+
+        public override void ResetValue(bool local)
+        {
+            value.Reset(local);
+            SetValue(value[local], local, SetFlags.All ^ SetFlags.Storage);
+        }
+
+        public override string CurrentValue() => GetText();
+        public override bool TrySetValue(string str)
+        {
+            if (!float.TryParse(str, out var v))
+                return false;
+            SetValue(v, ExtraSettingsAPI.IsInWorld);
+            return true;
+        }
+        public override string[] PossibleValues() => new[] { $"any decimal value from {minValue} to {maxValue}" };
+
+        public class Component : MonoBehaviour
+        {
+            public ModSetting_Slider owner;
+            public void Update()
+            {
+                owner.Update();
+            }
+        }
+
+        public override void OnExitWorld()
+        {
+            if (save.IsSplit())
+                SetValue(value.current, false, SetFlags.All ^ SetFlags.Storage);
+        }
     }
-    public override string[] PossibleValues() => new[] { $"any decimal value from {minValue} to {maxValue}" };
 }
