@@ -117,4 +117,14 @@ namespace _ExtraSettingsAPI
             pushed.Clear();
         }
     }
+
+    public enum Rounding
+    {
+        Lowest,
+        Nearest,
+        Highest,
+        Floor = Lowest,
+        Round = Nearest,
+        Cieling = Highest
+    }
 }

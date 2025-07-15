@@ -335,5 +335,12 @@ namespace _ExtraSettingsAPI
             size.y = text.cachedTextGeneratorForLayout.GetPreferredHeight(text.text, text.GetGenerationSettings(size)) / text.pixelsPerUnit;
             return size;
         }
+
+        public static double Round(this double value, Rounding rounding = Rounding.Nearest)
+            => rounding == Rounding.Lowest
+            ? Math.Floor(value)
+            : rounding == Rounding.Highest
+            ? Math.Ceiling(value)
+            : Math.Round(value, MidpointRounding.AwayFromZero);
     }
 }

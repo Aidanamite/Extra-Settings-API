@@ -18,6 +18,8 @@ namespace _ExtraSettingsAPI
         public float minValue = 0;
         public float maxValue = 100;
         public int rounding = 0;
+        public Rounding roundMode = Rounding.Nearest;
+        string formatter;
         public Value<float> value;
         public bool roundMember;
         public float roundValue
@@ -27,7 +29,8 @@ namespace _ExtraSettingsAPI
                 return DoRound(value.current);
             }
         }
-        float DoRound(float value) => (float)Math.Round(value, rounding + (valueType == SliderType.Percent ? 2 : 0));
+        double roundingFactor;
+        float DoRound(float value) => (float)((value * roundingFactor).Round(roundMode) / roundingFactor);
         public ModSetting_Slider(JObject source, ModSettingContainer parent) : base(source, parent)
         {
             if (source.TryGetValue<JObject>("range", out var range))
@@ -43,7 +46,23 @@ namespace _ExtraSettingsAPI
                     maxValue = v;
                 if (range.TryGetValue("decimals", out field) && field.Value.TryConvert(out int v2))
                     rounding = v2;
+                if (range.TryGetValue("roundMode", out field, JTokenType.String))
+                    if (Enum.TryParse(field.Value?.EnsureType<string>(), true, out Rounding roundParse))
+                        roundMode = roundParse;
+                    else
+                        ExtraSettingsAPI.LogError("Failed to parse rounding mode for " + name + " in " + parent.ModName);
+                if (range.TryGetValue("format", out field, JTokenType.String))
+                    formatter = field.Value?.EnsureType<string>();
             }
+            if (formatter == null)
+            {
+                formatter = "#,0";
+                if (rounding > 0)
+                    formatter += "." + new string('0',rounding);
+                if (valueType == SliderType.Percent)
+                    formatter += "%";
+            }
+            roundingFactor = Math.Pow(10, rounding + (valueType == SliderType.Percent ? 2 : 0));
             TrySetupMember(source);
             if (target != null && source.TryGetValue<JValue>("memberRound", out var roundField, JTokenType.Boolean))
                 roundMember = roundField.Value.EnsureType<bool>();
@@ -135,18 +154,7 @@ namespace _ExtraSettingsAPI
             }
         }
         public string GetText() => GetText(value.current);
-        public string GetText(float value)
-        {
-            switch (valueType)
-            {
-                case SliderType.Percent:
-                    return value.ToString("P" + rounding);
-                case SliderType.Custom:
-                    return ExtraSettingsAPI.mods[parent.parent].GetSliderText(this,value);
-                default:
-                    return value.ToString("N" + rounding);
-            }
-        }
+        public string GetText(float value) => valueType == SliderType.Custom ? ExtraSettingsAPI.mods[parent.parent].GetSliderText(this,value) : roundValue.ToString(formatter);
 
         protected override bool ShouldTryGenerateSave(bool local) => value.ShouldSave(local);
         public override JToken GenerateSaveJson(bool local) => value[local];
