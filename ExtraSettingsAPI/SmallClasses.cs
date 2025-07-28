@@ -51,6 +51,7 @@ namespace _ExtraSettingsAPI
         public ModSetting owner;
         public void OnPointerEnter(PointerEventData data) => ExtraSettingsAPI.OnSettingHover(owner, owner.GetTooltip);
         public void OnPointerExit(PointerEventData data) => ExtraSettingsAPI.OnSettingHoverStop(owner);
+        public void OnDisable() => ExtraSettingsAPI.OnSettingHoverStop(owner);
     }
 
     public class BasicTooltipHoverDetector : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
@@ -58,6 +59,7 @@ namespace _ExtraSettingsAPI
         public string Message;
         public void OnPointerEnter(PointerEventData data) => ExtraSettingsAPI.OnSettingHover(this, Message);
         public void OnPointerExit(PointerEventData data) => ExtraSettingsAPI.OnSettingHoverStop(this);
+        public void OnDisable() => ExtraSettingsAPI.OnSettingHoverStop(this);
     }
 
     [RequireComponent(typeof(RectTransform))]
@@ -125,6 +127,7 @@ namespace _ExtraSettingsAPI
         Highest,
         Floor = Lowest,
         Round = Nearest,
-        Cieling = Highest
+        Cieling = Highest,
+        Ceiling = Highest
     }
 }

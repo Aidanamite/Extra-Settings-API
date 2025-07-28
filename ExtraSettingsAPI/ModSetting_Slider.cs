@@ -154,7 +154,7 @@ namespace _ExtraSettingsAPI
             }
         }
         public string GetText() => GetText(value.current);
-        public string GetText(float value) => valueType == SliderType.Custom ? ExtraSettingsAPI.mods[parent.parent].GetSliderText(this,value) : roundValue.ToString(formatter);
+        public string GetText(float value) => valueType == SliderType.Custom ? ExtraSettingsAPI.mods[parent.parent].GetSliderText(this,value) : value.ToString(formatter);
 
         protected override bool ShouldTryGenerateSave(bool local) => value.ShouldSave(local);
         public override JToken GenerateSaveJson(bool local) => value[local];

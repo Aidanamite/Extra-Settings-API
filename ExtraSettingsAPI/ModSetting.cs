@@ -449,7 +449,7 @@ namespace _ExtraSettingsAPI
                 hasSplit = save == SaveType.SplitStrong;
             }
             public bool HasSplit => hasSplit;
-            public bool ShouldSave(bool local) => save == SaveType.World ? local : (!local || save != SaveType.Split || hasSplit);
+            public bool ShouldSave(bool local) => save == SaveType.World ? local : save == SaveType.Global ? !local : save == SaveType.Split ? !local || hasSplit : true;
             public T current { get => this[ExtraSettingsAPI.IsInWorld]; set => this[ExtraSettingsAPI.IsInWorld] = value; }
             public T this[bool local]
             {
