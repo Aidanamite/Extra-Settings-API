@@ -170,7 +170,7 @@ namespace _ExtraSettingsAPI
         {
             foreach (var s in allSettings)
             {
-                if (s.resetSplitButton)
+                if (s.resetSplitButton && s.splitButton)
                     s.splitButton.gameObject.SetActive(false);
                 s.OnExitWorld();
             }
