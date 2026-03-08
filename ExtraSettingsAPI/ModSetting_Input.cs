@@ -112,7 +112,14 @@ namespace _ExtraSettingsAPI
             if (newValue == null)
                 newValue = "";
             int i = 0;
-            newValue = ExtraSettingsAPI.mods[parent.parent].InputChanged(this, newValue, ref i, ref i);
+            try
+            {
+                if (ExtraSettingsAPI.mods.TryGetValue(parent.parent, out var caller))
+                    caller.InputChanged(this, newValue, ref i, ref i);
+            } catch (Exception e)
+            {
+                ExtraSettingsAPI.LogError(e);
+            }
             if (flags.HasFlag(SetFlags.Storage))
                 value[local] = newValue;
             if (flags.HasFlag(SetFlags.Control) && input)
