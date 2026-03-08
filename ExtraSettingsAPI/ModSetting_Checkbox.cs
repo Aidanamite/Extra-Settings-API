@@ -52,6 +52,12 @@ namespace _ExtraSettingsAPI
             checkbox.onValueChanged.AddListener(x => SetValue(x, ExtraSettingsAPI.IsInWorld, SetFlags.All ^ SetFlags.Control));
         }
 
+        protected override void SetInteractable(bool state)
+        {
+            base.SetInteractable(state);
+            SimpleSetInteractable(checkbox, state);
+        }
+
         public override void Create()
         {
             SetGameObject(Object.Instantiate(ExtraSettingsAPI.checkboxPrefab));

@@ -79,8 +79,29 @@ namespace _ExtraSettingsAPI
             input = control.GetComponentInChildren<InputField>(true);
             input.characterLimit = maxLength > 0 ? maxLength : int.MaxValue;
             input.contentType = contentType;
-            input.text = value.current;
+            input.onValidateInput += (x, y, z) => ExtraSettingsAPI.mods[parent.parent].InputValidation(this, x, y, z);
+            input.onValueChanged.AddListener((x) =>
+            {
+                var anchor = input.selectionAnchorPosition;
+                var focus = input.selectionFocusPosition;
+                var n = ExtraSettingsAPI.mods[parent.parent].InputChanged(this, x, ref anchor, ref focus);
+                if (n != x)
+                {
+                    input.SetTextWithoutNotify(n);
+                    input.selectionAnchorPosition = anchor;
+                    input.selectionFocusPosition = focus;
+                }
+            });
+            InputCaretClampEvent.Get(input).callback += (x) => ExtraSettingsAPI.mods[parent.parent].InputCaretClamp(this, input.text, x);
             input.onEndEdit.AddListener(t => SetValue(t, ExtraSettingsAPI.IsInWorld, SetFlags.All ^ SetFlags.Control));
+            int i = 0;
+            input.SetTextWithoutNotify(value.current);
+        }
+
+        protected override void SetInteractable(bool state)
+        {
+            base.SetInteractable(state);
+            SimpleSetInteractable(input, state);
         }
 
         public void SetValue(string newValue, bool local, SetFlags flags = SetFlags.All)
@@ -90,6 +111,8 @@ namespace _ExtraSettingsAPI
                 newValue = newValue.Remove(maxLength);
             if (newValue == null)
                 newValue = "";
+            int i = 0;
+            newValue = ExtraSettingsAPI.mods[parent.parent].InputChanged(this, newValue, ref i, ref i);
             if (flags.HasFlag(SetFlags.Storage))
                 value[local] = newValue;
             if (flags.HasFlag(SetFlags.Control) && input)

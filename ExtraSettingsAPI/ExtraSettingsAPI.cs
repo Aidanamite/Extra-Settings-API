@@ -14,7 +14,9 @@ using System.Linq;
 using RaftModLoader;
 using Object = UnityEngine.Object;
 using Debug = UnityEngine.Debug;
+#if !RAFT_BETA
 using PrivateAccess;
+#endif
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using _ExtraSettingsAPI;
@@ -107,12 +109,14 @@ namespace _ExtraSettingsAPI
             (harmony = new Harmony("com.aidanamite.ExtraSettingsAPI")).PatchAll();
             Log("Mod has been loaded!");
         }
+#if !RDS
         public void Start()
         {
             var cached = Path.Combine(HLib.path_cacheFolder_mods, HCacheManager.GetCachedModFileName(modlistEntry));
             if (File.Exists(cached))
                 File.Delete(cached);
         }
+#endif
 
         public void Update()
         {
@@ -154,6 +158,7 @@ namespace _ExtraSettingsAPI
                 Destroy(prefabParent.gameObject);
             if (toolTip)
                 Destroy(toolTip.GetComponentInParent<Canvas>().gameObject);
+            EventCaller.ReleaseModule();
             Log("Mod has been unloaded!");
         }
 
@@ -196,7 +201,7 @@ namespace _ExtraSettingsAPI
         {
             JObject data;
             var current = CultureInfo.CurrentCulture;
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfoByIetfLanguageTag("en-NZ");
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
             try
             {
                 if (File.Exists(isLocal ? worldConfigPath : configPath))
@@ -267,7 +272,11 @@ namespace _ExtraSettingsAPI
         {
             if (settingsExist)
                 return;
+#if RAFT_BETA
+            var MenuPanel = settingsController.panel;
+#else
             var MenuPanel = settingsController.Panel();
+#endif
             var TabGroup = MenuPanel.GetComponentInChildren<TabGroup>();
             MenuPanel.offsetMax += new Vector2((TabGroup.tabButtons[1].transform.localPosition - TabGroup.tabButtons[0].transform.localPosition).x, 0);
             int newIndex = TabGroup.tabButtons.Length;
@@ -285,7 +294,11 @@ namespace _ExtraSettingsAPI
             newTabButton.OnPointerExit(true);
             Traverse tabTraverse = Traverse.Create(newTabButton);
             //tabTraverse.Field("tabButton").SetValue(newTabButton.GetComponentInChildren<Button>(true)); // i dont think i need to do this
+#if RAFT_BETA
+            newTabButton.tab = newTabBody;
+#else
             newTabButton.Tab(newTabBody);
+#endif
             Add(ref TabGroup.tabButtons, newTabButton);
             //(newTabButtonObj.transform as RectTransform).pivot = new Vector2(0f, 1f);
             DestroyImmediate(newTabBody.GetComponent<GraphicsSettingsBox>());
@@ -401,7 +414,11 @@ namespace _ExtraSettingsAPI
                 }
                 Destroy(transform.gameObject);
             }
-            keybindColors = ComponentManager<Settings>.Value.controls.ColorBlock();
+#if RAFT_BETA
+            keybindColors = settingsController.controls.colorblock;
+#else
+            keybindColors = settingsController.controls.ColorBlock();
+#endif
             foreach (Transform transform in ComponentManager<Settings>.Value.controls.GetComponentInChildren<ScrollRect>().content)
             {
                 if (!keybindPrefab && transform.GetComponentInChildren<KeybindInterface>(true))
@@ -559,7 +576,11 @@ namespace _ExtraSettingsAPI
         {
             if (!settingsExist)
                 return;
+#if RAFT_BETA
+            var MenuPanel = settingsController.panel;
+#else
             var MenuPanel = settingsController.Panel();
+#endif
             var TabGroup = MenuPanel.GetComponentInChildren<TabGroup>();
             if (TabGroup.SelectedTabButton == newTabButton)
                 TabGroup.SelectTab(0);
@@ -655,14 +676,14 @@ namespace _ExtraSettingsAPI
                 var newSettings = new ModSettingContainer(mod, settings, eventTarget, targetType);
                 modSettings.Add(mod, newSettings);
                 mods.Add(mod, caller);
-                caller.Call(EventCaller.EventTypes.Load);
+                caller.Call(EventCaller.SimpleEventTypes.Load);
                 if (IsInWorld)
-                    caller.Call(EventCaller.EventTypes.WorldLoad);
+                    caller.Call(EventCaller.SimpleEventTypes.WorldLoad);
                 if (settingsExist)
                 {
-                    caller.Call(EventCaller.EventTypes.Create);
+                    caller.Call(EventCaller.SimpleEventTypes.Create);
                     if (settingsController.IsOpen)
-                        caller.Call(EventCaller.EventTypes.Open);
+                        caller.Call(EventCaller.SimpleEventTypes.Open);
                 }
             }
             catch (Exception err)
@@ -736,7 +757,7 @@ namespace _ExtraSettingsAPI
             foreach (var settings in modSettings.Values)
                 settings.OnExitWorld();
             foreach (var caller in mods.Values)
-                caller.Call(EventCaller.EventTypes.WorldExit);
+                caller.Call(EventCaller.SimpleEventTypes.WorldExit);
         }
 
         public override void ModEvent_OnModUnloaded(Mod mod)
@@ -1196,9 +1217,9 @@ namespace _ExtraSettingsAPI
             }
             if (args[2].ToLowerInvariant() == "reset")
             {
-                GetCallerFromMod(m).Call(EventCaller.EventTypes.Open);
+                GetCallerFromMod(m).Call(EventCaller.SimpleEventTypes.Open);
                 s.ResetValue();
-                GetCallerFromMod(m).Call(EventCaller.EventTypes.Close);
+                GetCallerFromMod(m).Call(EventCaller.SimpleEventTypes.Close);
                 Debug.Log("Value reset to " + s.CurrentValue());
                 return;
             }
@@ -1206,9 +1227,9 @@ namespace _ExtraSettingsAPI
             {
                 if (s is ModSetting_Button b)
                 {
-                    GetCallerFromMod(m).Call(EventCaller.EventTypes.Open);
+                    GetCallerFromMod(m).Call(EventCaller.SimpleEventTypes.Open);
                     GetCallerFromMod(m).ButtonPress(b);
-                    GetCallerFromMod(m).Call(EventCaller.EventTypes.Close);
+                    GetCallerFromMod(m).Call(EventCaller.SimpleEventTypes.Close);
                     Debug.Log(s.nameText + " button clicked");
                 }
                 else if (s is ModSetting_MultiButton mb)
@@ -1234,9 +1255,9 @@ namespace _ExtraSettingsAPI
                         Debug.LogWarning($"MultiButton {s.nameText} does not have the button \"{v2}\"");
                     else
                     {
-                        GetCallerFromMod(m).Call(EventCaller.EventTypes.Open);
+                        GetCallerFromMod(m).Call(EventCaller.SimpleEventTypes.Open);
                         GetCallerFromMod(m).ButtonPress(mb, ind);
-                        GetCallerFromMod(m).Call(EventCaller.EventTypes.Close);
+                        GetCallerFromMod(m).Call(EventCaller.SimpleEventTypes.Close);
                     }
                 }
                 else
@@ -1256,15 +1277,15 @@ namespace _ExtraSettingsAPI
                 sb.Append(args[i]);
             }
             var v = sb.ToString();
-            GetCallerFromMod(m).Call(EventCaller.EventTypes.Open);
+            GetCallerFromMod(m).Call(EventCaller.SimpleEventTypes.Open);
             if (v == "")
             {
                 Debug.Log($"Name: {s.nameText}\nSetting Type: {s.DisplayType()}\nCurrent: {s.CurrentValue()}\nCan be: [{s.PossibleValues().Join()}]");
-                GetCallerFromMod(m).Call(EventCaller.EventTypes.Close);
+                GetCallerFromMod(m).Call(EventCaller.SimpleEventTypes.Close);
                 return;
             }
             var flag = s.TrySetValue(v);
-            GetCallerFromMod(m).Call(EventCaller.EventTypes.Close);
+            GetCallerFromMod(m).Call(EventCaller.SimpleEventTypes.Close);
             if (flag)
                 Debug.Log("Value changed to " + s.CurrentValue());
             else

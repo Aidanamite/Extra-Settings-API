@@ -21,6 +21,10 @@ namespace _ExtraSettingsAPI
             button.onClick.AddListener(() => ExtraSettingsAPI.mods[parent.parent].ButtonPress(this));
         }
 
+        protected override void SetInteractable(bool state) => SimpleSetInteractable(button, state);
+
+        public override void UpdateTextWidth() { }
+
         public override void Create()
         {
             SetGameObject(Object.Instantiate(ExtraSettingsAPI.buttonPrefab));

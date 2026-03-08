@@ -1,9 +1,12 @@
 ﻿using HarmonyLib;
 using Newtonsoft.Json.Linq;
+#if !RAFT_BETA
 using PrivateAccess;
+#endif
 using System;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Windows;
 using static UnityEngine.GraphicsBuffer;
 using Object = UnityEngine.Object;
 
@@ -107,10 +110,21 @@ namespace _ExtraSettingsAPI
             UIslider.gameObject.AddComponent<Component>().owner = this;
             UIslider.SliderEvent.RemoveAllListeners();
             slider.onValueChanged.RemoveAllListeners();
+#if RAFT_BETA
+            sliderText = UIslider.sliderTextComponent;
+#else
             sliderText = UIslider.TextComponent();
+#endif
             UIslider.name = "ESAPI_" + control.name + "_UISlider";
             UIslider.enabled = false;
             slider.onValueChanged.AddListener(x => SetValue(x, ExtraSettingsAPI.IsInWorld, SetFlags.All ^ SetFlags.Control));
+        }
+
+        protected override void SetInteractable(bool state)
+        {
+            base.SetInteractable(state);
+            SimpleSetInteractable(slider, state);
+            SimpleSetInteractable(sliderText, state);
         }
 
         public void SetValue(float newValue, bool local, SetFlags flags = SetFlags.All)

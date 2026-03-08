@@ -9,6 +9,8 @@ using Object = UnityEngine.Object;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Newtonsoft.Json.Linq;
+using System.Reflection.Emit;
+using HarmonyLib;
 
 namespace _ExtraSettingsAPI
 {
@@ -342,5 +344,124 @@ namespace _ExtraSettingsAPI
             : rounding == Rounding.Highest
             ? Math.Ceiling(value)
             : Math.Round(value, MidpointRounding.AwayFromZero);
+
+
+        public static void ParseDeclares(this ILGenerator generator, CodeInstruction instruction)
+        {
+            if (instruction.operand is DefineLabel _DefineLabel)
+            {
+                if (instruction.opcode == OpCodes.Nop)
+                {
+                    instruction.labels.Add(_DefineLabel.Get(generator));
+                    instruction.operand = null;
+                    return;
+                }
+                instruction.operand = _DefineLabel.Get(generator);
+            }
+            if (instruction.operand is DeclareLocal _DeclareLocal)
+                instruction.operand = _DeclareLocal.Get(generator);
+        }
+        public static void Emit(this ILGenerator generator, CodeInstruction instruction, bool labelsOnly = false)
+        {
+            if (instruction.operand is DefineLabel _DefineLabel)
+            {
+                if (instruction.opcode == OpCodes.Nop)
+                {
+                    instruction.labels.Add(_DefineLabel.Get(generator));
+                    instruction.operand = null;
+                    return;
+                }
+                instruction.operand = _DefineLabel.Get(generator);
+            }
+            foreach (var l in instruction.labels)
+                generator.MarkLabel(l);
+            if (labelsOnly)
+                return;
+            if (instruction.operand is DeclareLocal _DeclareLocal)
+                instruction.operand = _DeclareLocal.Get(generator);
+            if (instruction.operand == null)
+                generator.Emit(instruction.opcode);
+            else if (instruction.operand is byte _byte)
+                generator.Emit(instruction.opcode, _byte);
+            else if (instruction.operand is ConstructorInfo _ConstructorInfo)
+                generator.Emit(instruction.opcode, _ConstructorInfo);
+            else if (instruction.operand is double _double)
+                generator.Emit(instruction.opcode, _double);
+            else if (instruction.operand is FieldInfo _FieldInfo)
+                generator.Emit(instruction.opcode, _FieldInfo);
+            else if (instruction.operand is float _float)
+                generator.Emit(instruction.opcode, _float);
+            else if (instruction.operand is int _int)
+                generator.Emit(instruction.opcode, _int);
+            else if (instruction.operand is Label _Label)
+                generator.Emit(instruction.opcode, _Label);
+            else if (instruction.operand is Label[] _Labels)
+                generator.Emit(instruction.opcode, _Labels);
+            else if (instruction.operand is LocalBuilder _LocalBuilder)
+                generator.Emit(instruction.opcode, _LocalBuilder);
+            else if (instruction.operand is long _long)
+                generator.Emit(instruction.opcode, _long);
+            else if (instruction.operand is MethodInfo _MethodInfo)
+                generator.Emit(instruction.opcode, _MethodInfo);
+            else if (instruction.operand is sbyte _sbyte)
+                generator.Emit(instruction.opcode, _sbyte);
+            else if (instruction.operand is short _short)
+                generator.Emit(instruction.opcode, _short);
+            else if (instruction.operand is SignatureHelper _SignatureHelper)
+                generator.Emit(instruction.opcode, _SignatureHelper);
+            else if (instruction.operand is string _string)
+                generator.Emit(instruction.opcode, _string);
+            else if (instruction.operand is Type _Type)
+                generator.Emit(instruction.opcode, _Type);
+        }
+
+        public static IntPtr GetPointer(this MethodInfo method)
+        {
+            var handle = method.MethodHandle;
+            handle.GetFunctionPointer(); // This must be run before PrepareMethod to make sure the system knows the method is actually wanted. Not sure why it doesn't assume this from calling PrepareMethod
+            RuntimeHelpers.PrepareMethod(handle);
+            return handle.GetFunctionPointer();
+        }
+
+        public static bool Contains<T>(this IEnumerable<T> c, Predicate<T> condition, out T found)
+        {
+            foreach (var i in c)
+                if (condition(i))
+                {
+                    found = i;
+                    return true;
+                }
+            found = default;
+            return false;
+        }
+    }
+
+    public class DeclareLocal
+    {
+        readonly Type type;
+        readonly bool pinned;
+        public DeclareLocal(Type Type, bool Pinned = false)
+        {
+            type = Type;
+            pinned = Pinned;
+        }
+        LocalBuilder local;
+        public LocalBuilder Get(ILGenerator iL)
+        {
+            if (local == null)
+                local = iL.DeclareLocal(type, pinned);
+            return local;
+        }
+    }
+
+    public class DefineLabel
+    {
+        Label? label;
+        public Label Get(ILGenerator iL)
+        {
+            if (label == null)
+                label = iL.DefineLabel();
+            return label.Value;
+        }
     }
 }

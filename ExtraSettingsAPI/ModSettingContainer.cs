@@ -141,7 +141,11 @@ namespace _ExtraSettingsAPI
             open = on;
             foreach (var setting in allSettings)
                 if (setting.control)
+                {
                     setting.control.SetActiveSafe(on && setting.ShouldShow(!ExtraSettingsAPI.IsInWorld));
+                    if (setting.control.activeSelf)
+                        setting.CheckEnabled();
+                }
             ExtraSettingsAPI.UpdateAllSettingBacks();
         }
 
@@ -154,7 +158,7 @@ namespace _ExtraSettingsAPI
                 if (setting.resetSplitButton && setting.splitButton)
                     setting.splitButton.gameObject.SetActive(true);
             }
-            ExtraSettingsAPI.GetCallerFromMod(parent).Call(EventCaller.EventTypes.WorldLoad);
+            ExtraSettingsAPI.GetCallerFromMod(parent).Call(EventCaller.SimpleEventTypes.WorldLoad);
         }
 
         public bool DoUpdateLate()

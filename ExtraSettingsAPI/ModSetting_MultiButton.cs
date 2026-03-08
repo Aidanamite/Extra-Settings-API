@@ -31,6 +31,12 @@ namespace _ExtraSettingsAPI
             SetValue(names);
         }
 
+        protected override void SetInteractable(bool state)
+        {
+            foreach (var button in buttons)
+                SimpleSetInteractable(button, state);
+        }
+
         public override void Create()
         {
             SetGameObject(Object.Instantiate(ExtraSettingsAPI.multibuttonPrefab));

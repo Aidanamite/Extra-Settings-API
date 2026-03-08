@@ -331,40 +331,34 @@ public static class FastDelegateExtentions
             }
         return best;
     }
+    static Dictionary<Type, string> specialNames = new Dictionary<Type, string>()
+    {
+        { typeof(bool), "bool" },
+        { typeof(byte), "byte" },
+        { typeof(sbyte), "sbyte" },
+        { typeof(short), "short" },
+        { typeof(ushort), "ushort" },
+        { typeof(int), "int" },
+        { typeof(uint), "uint" },
+        { typeof(long), "long" },
+        { typeof(ulong), "ulong" },
+        { typeof(char), "char" },
+        { typeof(float), "float" },
+        { typeof(double), "double" },
+        { typeof(void), "void" },
+        { typeof(void*), "void*" },
+        { typeof(string), "string" }
+    };
     public static StringBuilder AppendDisplayName(this StringBuilder builder, Type type)
     {
         if (builder == null)
             builder = new StringBuilder();
-        if (type == null || type == typeof(void))
+        if (type == null)
             builder.Append("void");
-        else if (type == typeof(object))
-            builder.Append("object");
-        else if (type == typeof(string))
-            builder.Append("string");
-        else if (type == typeof(byte))
-            builder.Append("byte");
-        else if (type == typeof(sbyte))
-            builder.Append("sbyte");
-        else if (type == typeof(ushort))
-            builder.Append("ushort");
-        else if (type == typeof(short))
-            builder.Append("short");
-        else if (type == typeof(uint))
-            builder.Append("uint");
-        else if (type == typeof(int))
-            builder.Append("int");
-        else if (type == typeof(ulong))
-            builder.Append("ulong");
-        else if (type == typeof(long))
-            builder.Append("long");
-        else if (type == typeof(float))
-            builder.Append("float");
-        else if (type == typeof(double))
-            builder.Append("double");
-        else if (type == typeof(char))
-            builder.Append("char");
+        else if (specialNames.TryGetValue(type,out var name))
+            builder.Append(name);
         else if (type.IsPointer)
-            builder.Append("*").AppendDisplayName(type.GetElementType());
+            builder.AppendDisplayName(type.GetElementType()).Append("*");
         else if (type.IsByRef)
             builder.Append("&").AppendDisplayName(type.GetElementType());
         else if (type.IsArray)

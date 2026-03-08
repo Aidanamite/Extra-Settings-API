@@ -5,7 +5,13 @@ using System.Reflection;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
+using UnityEngine.UI;
+using System.Runtime.CompilerServices;
+
+
+#if !RAFT_BETA
 using PrivateAccess;
+#endif
 using System.IO;
 
 
@@ -20,10 +26,10 @@ namespace _ExtraSettingsAPI
             {
                 ExtraSettingsAPI.insertNewSettingsMenu();
                 foreach (var caller in ExtraSettingsAPI.mods.Values)
-                    caller.Call(EventCaller.EventTypes.Create);
+                    caller.Call(EventCaller.SimpleEventTypes.Create);
             }
             foreach (var caller in ExtraSettingsAPI.mods.Values)
-                caller.Call(EventCaller.EventTypes.Open);
+                caller.Call(EventCaller.SimpleEventTypes.Open);
         }
     }
 
@@ -37,7 +43,7 @@ namespace _ExtraSettingsAPI
             {
                 ExtraSettingsAPI.generateSaveJson();
                 foreach (EventCaller caller in ExtraSettingsAPI.mods.Values)
-                    caller.Call(EventCaller.EventTypes.Close);
+                    caller.Call(EventCaller.SimpleEventTypes.Close);
             }
         }
     }
@@ -150,6 +156,29 @@ namespace _ExtraSettingsAPI
         {
             if (!Raft_Network.IsHost)
                 ExtraSettingsAPI.generateSaveJson(ExtraSettingsAPI.worldConfigPath);
+        }
+    }
+
+    public class InputCaretClampEvent
+    {
+        public event Func<int, int> callback;
+        InputCaretClampEvent() { }
+        static ConditionalWeakTable<InputField, InputCaretClampEvent> events = new ConditionalWeakTable<InputField, InputCaretClampEvent>();
+        public static InputCaretClampEvent Get(InputField input)
+        {
+            if (!events.TryGetValue(input, out var e))
+                events.Add(input, e = new InputCaretClampEvent());
+            return e;
+        }
+        public int Invoke(int value) => callback == null ? value : callback(value);
+    }
+
+    [HarmonyPatch(typeof(InputField),"ClampPos")]
+    static class Patch_ClampCaretPosition
+    {
+        static void Prefix(InputField __instance, ref int pos)
+        {
+            pos = InputCaretClampEvent.Get(__instance).Invoke(pos);
         }
     }
 

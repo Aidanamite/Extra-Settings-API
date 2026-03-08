@@ -13,6 +13,8 @@ namespace _ExtraSettingsAPI
             SetGameObject(Object.Instantiate(ExtraSettingsAPI.seperatorPrefab));
         }
 
+        protected override void SetInteractable(bool state) => SimpleSetInteractable(control, state);
+
         public override bool SetBackImage(bool state) => false;
     }
 }

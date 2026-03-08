@@ -22,6 +22,8 @@ namespace PrivateAccess
         }
         public static Text TextComponent(this UISlider slider) => slider.sliderTextComponent;
         public static void Refresh(this KeybindInterface ui) => ui.Refresh();
+        public static Button MainKeyButton(this KeybindInterface keybind) => keybind.mainKey.button;
+        public static Button AltKeyButton(this KeybindInterface keybind) => keybind.altKey.button;
     }
     public static class HiddenStatics
     {

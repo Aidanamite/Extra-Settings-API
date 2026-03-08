@@ -1,6 +1,8 @@
 ﻿using HarmonyLib;
 using Newtonsoft.Json.Linq;
+#if !RAFT_BETA
 using PrivateAccess;
+#endif
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -70,7 +72,13 @@ namespace _ExtraSettingsAPI
         {
             base.SetGameObject(go);
             keybind = control.GetComponent<KeybindInterface>();
+#if RAFT_BETA
+            keybind.identifier = instance.Identifier;
+            keybind.mainKeyDefault = main.Default;
+            keybind.altKeyDefault = alt.Default;
+#else
             keybind.SetDefault(instance.Identifier, main.Default, alt.Default);
+#endif
 
             //KeyConnection main = keyTrav.Field("mainKey").GetValue<KeyConnection>();
             //KeyConnection alt = keyTrav.Field("altKey").GetValue<KeyConnection>();
@@ -80,6 +88,19 @@ namespace _ExtraSettingsAPI
             //alt.text = alt.button.GetComponentInChildren<Text>(true);
             keybind.Initialize(ExtraSettingsAPI.keybindColors);
             keybind.Set(instance);
+        }
+
+        protected override void SetInteractable(bool state)
+        {
+            base.SetInteractable(state);
+            SimpleSetInteractable(keybind, state);
+#if RAFT_BETA
+            keybind.mainKey.button.interactable = state;
+            keybind.altKey.button.interactable = state;
+#else
+            keybind.MainKeyButton().interactable = state;
+            keybind.AltKeyButton().interactable = state;
+#endif
         }
 
         public override void Create()

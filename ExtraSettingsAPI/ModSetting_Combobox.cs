@@ -70,6 +70,12 @@ namespace _ExtraSettingsAPI
             combobox.onValueChanged.AddListener(x => SetValue(x, ExtraSettingsAPI.IsInWorld, SetFlags.All ^ SetFlags.Control));
         }
 
+        protected override void SetInteractable(bool state)
+        {
+            base.SetInteractable(state);
+            SimpleSetInteractable(combobox, state);
+        }
+
         bool TryConvertMember(out int result)
         {
             result = 0;

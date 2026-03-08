@@ -301,6 +301,14 @@ namespace _ExtraSettingsAPI
             }
         }
 
+        bool interactable = true;
+        public void CheckEnabled()
+        {
+            if (interactable != ExtraSettingsAPI.mods[parent.parent].GetSettingEnabled(this))
+                SetInteractable(interactable = !interactable);
+        }
+        protected virtual void SetInteractable(bool state) { if (text) SimpleSetInteractable(text, state); }
+
         virtual public void SetGameObject(GameObject go)
         {
             control = go;
@@ -342,12 +350,23 @@ namespace _ExtraSettingsAPI
             if (text)
             {
                 text.text = newText;
-                if (!(this is ModSetting_Button))
-                {
-                    text.rectTransform.offsetMax += new Vector2(text.preferredWidth - text.rectTransform.sizeDelta.x, 0);
-                }
+                UpdateTextWidth();
             }
         }
+
+        protected static void SimpleSetInteractable(Component comp,bool state)
+        {
+            if (comp is Selectable selectable)
+                selectable.interactable = state;
+            SimpleSetInteractable(comp.gameObject, state);
+        }
+
+        protected static void SimpleSetInteractable(GameObject go, bool state)
+        {
+            go.GetOrAddComponent<CanvasGroup>().alpha = state ? 1 : 0.5f;
+        }
+
+        virtual public void UpdateTextWidth() => text.rectTransform.offsetMax += new Vector2(text.preferredWidth - text.rectTransform.sizeDelta.x, 0);
 
         virtual public void Create() { }
         virtual public void Destroy()
