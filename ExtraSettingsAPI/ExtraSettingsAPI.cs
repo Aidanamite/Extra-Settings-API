@@ -302,6 +302,7 @@ namespace _ExtraSettingsAPI
             Add(ref TabGroup.tabButtons, newTabButton);
             //(newTabButtonObj.transform as RectTransform).pivot = new Vector2(0f, 1f);
             DestroyImmediate(newTabBody.GetComponent<GraphicsSettingsBox>());
+            newTabBody.AddComponent<OptionsMenuBox>();
             newTabContent = newTabBody.GetComponentInChildren<ScrollRect>().content;
             foreach (Transform transform in newTabContent)
             {

@@ -7,6 +7,8 @@ using System.Reflection.Emit;
 using System.Linq;
 using Debug = UnityEngine.Debug;
 using System.Runtime.CompilerServices;
+using System.Security;
+using System.Security.Permissions;
 
 namespace _ExtraSettingsAPI
 {
@@ -551,8 +553,16 @@ namespace _ExtraSettingsAPI
         {
             if (module == null)
             {
-                assembly = AppDomain.CurrentDomain.DefineDynamicAssembly(new AssemblyName("ExtraSettingsAPI-" + DateTime.UtcNow.Ticks), AssemblyBuilderAccess.RunAndCollect);
+                assembly = AppDomain.CurrentDomain.DefineDynamicAssembly(new AssemblyName("ExtraSettingsAPI-" + DateTime.UtcNow.Ticks), AssemblyBuilderAccess.RunAndCollect, new[]
+                {
+                    new CustomAttributeBuilder(
+                        typeof(SecurityPermissionAttribute).GetConstructors().First(x => x.GetParameters().Length == 1),
+                        new object[] { SecurityAction.RequestMinimum },
+                        new[] { typeof(SecurityPermissionAttribute).GetProperty("SkipVerification") },
+                        new object[] { true })
+                }, SecurityContextSource.CurrentAppDomain);
                 module = assembly.DefineDynamicModule(assembly.GetName().Name + ".dll");
+                module.SetCustomAttribute(new CustomAttributeBuilder(typeof(UnverifiableCodeAttribute).GetConstructors().First(x => x.GetParameters().Length == 0), Array.Empty<object>()));
             }
             bool inst;
             Type targetType;

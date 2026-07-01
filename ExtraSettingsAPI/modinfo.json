@@ -1,8 +1,9 @@
 {
   "name": "Extra Settings API",
+  "slug": "extra-settings-api",
   "author": "Aidanamite",
   "description": "This is a dependency mod. This mod may be required by a few mods",
-  "version": "1.11.1",
+  "version": "1.11.2",
   "license": "GNU AGPLv3",
   "icon": "icon.png",
   "banner": "banner.jpg",
